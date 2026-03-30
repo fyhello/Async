@@ -1,0 +1,58 @@
+import type { FileChangeSummary } from './agentChatSegments';
+
+/** 与 main-src/gitService 中 porcelain 路径一致：正斜杠、去 ./ */
+export function normalizeWorkspaceRelPath(p: string): string {
+	return p.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+export type DiffPreviewStats = { additions: number; deletions: number };
+
+function findDiffPreview(
+	previews: Record<string, DiffPreviewStats>,
+	relPath: string
+): DiffPreviewStats | undefined {
+	const n = normalizeWorkspaceRelPath(relPath);
+	const direct = previews[relPath] ?? previews[n];
+	if (direct) {
+		return direct;
+	}
+	for (const k of Object.keys(previews)) {
+		if (normalizeWorkspaceRelPath(k) === n) {
+			return previews[k];
+		}
+	}
+	return undefined;
+}
+
+/**
+ * 底部「改动文件」条：在 Git 可用时用 `git status` 判断是否仍有工作区改动，
+ * 用 `git diff` 统计增删行；否则回退为对话里解析出的行数（无 Git / 非仓库 / git 失败）。
+ */
+export function mergeAgentFileChangesWithGit(
+	fromAssistant: FileChangeSummary[],
+	options: {
+		gitStatusOk: boolean;
+		gitChangedPaths: string[];
+		diffPreviews: Record<string, DiffPreviewStats>;
+	}
+): FileChangeSummary[] {
+	const { gitStatusOk, gitChangedPaths, diffPreviews } = options;
+	if (!gitStatusOk) {
+		return fromAssistant;
+	}
+	const gitSet = new Set(gitChangedPaths.map(normalizeWorkspaceRelPath));
+	const out: FileChangeSummary[] = [];
+	for (const f of fromAssistant) {
+		const n = normalizeWorkspaceRelPath(f.path);
+		if (!gitSet.has(n)) {
+			continue;
+		}
+		const prev = findDiffPreview(diffPreviews, f.path);
+		out.push({
+			...f,
+			additions: prev?.additions ?? 0,
+			deletions: prev?.deletions ?? 0,
+		});
+	}
+	return out;
+}

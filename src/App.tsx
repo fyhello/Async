@@ -28,6 +28,13 @@ import {
 	segmentAssistantContent,
 	collectFileChanges,
 } from './agentChatSegments';
+import {
+	clearPersistedAgentFileChanges,
+	hashAgentAssistantContent,
+	readPersistedAgentFileChanges,
+	writePersistedAgentFileChanges,
+} from './agentFileChangesPersist';
+import { mergeAgentFileChangesWithGit } from './agentFileChangesFromGit';
 import { ModelPickerDropdown, type ModelPickerItem } from './ModelPickerDropdown';
 import { SettingsPage, type SettingsNavId } from './SettingsPage';
 import {
@@ -426,6 +433,12 @@ export default function App() {
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
+	const messagesRef = useRef(messages);
+	messagesRef.current = messages;
+	/** `messages` 最近一次由 `threads:messages` 写入时对应的线程；与 `currentId` 不一致时不做文件条 persist 的读/清，避免切线程空窗期误删 localStorage */
+	const [messagesThreadId, setMessagesThreadId] = useState<string | null>(null);
+	const currentIdRef = useRef(currentId);
+	currentIdRef.current = currentId;
 	/** 点击某条用户消息后，从该条起截断并重发（与 threads:messages 顺序一致） */
 	const [resendFromUserIndex, setResendFromUserIndex] = useState<number | null>(null);
 	const [composerSegments, setComposerSegments] = useState<ComposerSegment[]>([]);
@@ -441,6 +454,8 @@ export default function App() {
 	const [gitLines, setGitLines] = useState<string[]>([]);
 	const [gitPathStatus, setGitPathStatus] = useState<GitPathStatusMap>({});
 	const [gitChangedPaths, setGitChangedPaths] = useState<string[]>([]);
+	/** `git:status` 成功（有仓库且本机可执行 git）；否则 Agent 改动条回退为对话解析统计 */
+	const [gitStatusOk, setGitStatusOk] = useState(false);
 	const [diffPreviews, setDiffPreviews] = useState<Record<string, DiffPreview>>({});
 	const [diffLoading, setDiffLoading] = useState(false);
 	const [gitActionError, setGitActionError] = useState<string | null>(null);
@@ -451,6 +466,8 @@ export default function App() {
 	const [agentReviewBusy, setAgentReviewBusy] = useState(false);
 	const [fileChangesDismissed, setFileChangesDismissed] = useState(false);
 	const [dismissedFiles, setDismissedFiles] = useState<Set<string>>(new Set());
+	const fileChangesDismissedRef = useRef(fileChangesDismissed);
+	fileChangesDismissedRef.current = fileChangesDismissed;
 	/** Plan 模式 — 结构化问题弹窗 */
 	const [planQuestion, setPlanQuestion] = useState<PlanQuestion | null>(null);
 	/** Plan 模式 — 解析出的计划文档 */
@@ -646,7 +663,11 @@ export default function App() {
 				messages?: ChatMessage[];
 			};
 			if (r.ok && r.messages) {
+				if (currentIdRef.current !== id) {
+					return;
+				}
 				setMessages(r.messages);
+				setMessagesThreadId(id);
 			}
 		},
 		[shell]
@@ -660,11 +681,13 @@ export default function App() {
 			| { ok: true; branch: string; lines: string[]; pathStatus?: GitPathStatusMap; changedPaths?: string[] }
 			| { ok: false; error?: string };
 		if (r.ok) {
+			setGitStatusOk(true);
 			setGitBranch(r.branch || 'master');
 			setGitLines(r.lines);
 			setGitPathStatus(r.pathStatus ?? {});
 			setGitChangedPaths(r.changedPaths ?? []);
 		} else {
+			setGitStatusOk(false);
 			setGitBranch('—');
 			setGitLines([r.error ?? 'Failed to load changes']);
 			setGitPathStatus({});
@@ -899,6 +922,8 @@ export default function App() {
 				clearStreamingToolPreviewSoon();
 				setFileChangesDismissed(false);
 				setDismissedFiles(new Set());
+				/* 新一轮助手回复落库前，勿让旧 persist 在 loadMessages 空窗期把面板状态粘回去 */
+				clearPersistedAgentFileChanges(payload.threadId);
 				if (payload.pendingAgentPatches && payload.pendingAgentPatches.length > 0) {
 					setAgentReviewPendingByThread((prev) => ({
 						...prev,
@@ -1146,12 +1171,14 @@ export default function App() {
 			setEditingThreadId((ed) => (ed === id ? null : ed));
 			if (wasCurrent) {
 				setMessages([]);
+				setMessagesThreadId(null);
 				setStreaming('');
 				setComposerSegments([]);
 				setInlineResendSegments([]);
 				setResendFromUserIndex(null);
 			}
 			await shell.invoke('threads:delete', id);
+			clearPersistedAgentFileChanges(id);
 			await refreshThreads();
 		},
 		[shell, currentId, awaitingReply, refreshThreads, confirmDeleteId, clearStreamingToolPreviewNow]
@@ -1597,18 +1624,67 @@ export default function App() {
 		if (!lastAssistant) return [];
 		const segs = segmentAssistantContent(lastAssistant.content, { t });
 		const all = collectFileChanges(segs);
-		return dismissedFiles.size > 0 ? all.filter((f) => !dismissedFiles.has(f.path)) : all;
-	}, [displayMessages, composerMode, t, dismissedFiles]);
+		const afterDismiss =
+			dismissedFiles.size > 0 ? all.filter((f) => !dismissedFiles.has(f.path)) : all;
+		return mergeAgentFileChangesWithGit(afterDismiss, {
+			gitStatusOk,
+			gitChangedPaths,
+			diffPreviews,
+		});
+	}, [displayMessages, composerMode, t, dismissedFiles, gitStatusOk, gitChangedPaths, diffPreviews]);
+
+	/** 从 localStorage 恢复「已保留/已撤销全部」或逐文件忽略，绑定当前线程最后一条助手正文 */
+	useLayoutEffect(() => {
+		if (!currentId) {
+			setFileChangesDismissed(false);
+			setDismissedFiles(new Set());
+			return;
+		}
+		if (messagesThreadId !== currentId) {
+			/* 切线程后、loadMessages 完成前：勿用旧线程的 messages 去对本线程的 persist 做哈希比对 */
+			setFileChangesDismissed(false);
+			setDismissedFiles(new Set());
+			return;
+		}
+		const last = [...messages].reverse().find((m) => m.role === 'assistant');
+		const content = last?.content ?? '';
+		if (!content.trim()) {
+			setFileChangesDismissed(false);
+			setDismissedFiles(new Set());
+			return;
+		}
+		const hash = hashAgentAssistantContent(content);
+		const stored = readPersistedAgentFileChanges(currentId);
+		if (!stored) {
+			setFileChangesDismissed(false);
+			setDismissedFiles(new Set());
+			return;
+		}
+		if (stored.contentHash !== hash) {
+			setFileChangesDismissed(false);
+			setDismissedFiles(new Set());
+			clearPersistedAgentFileChanges(currentId);
+			return;
+		}
+		setFileChangesDismissed(stored.fileChangesDismissed);
+		setDismissedFiles(new Set(stored.dismissedPaths));
+	}, [currentId, messages, messagesThreadId]);
 
 	const onKeepAllEdits = useCallback(async () => {
-		if (shell && currentId) {
+		if (!currentId) {
+			return;
+		}
+		if (shell) {
 			try {
 				await shell.invoke('agent:keepLastTurn', currentId);
 			} catch {
 				/* ignore */
 			}
 		}
+		setDismissedFiles(new Set());
 		setFileChangesDismissed(true);
+		const last = [...messagesRef.current].reverse().find((m) => m.role === 'assistant');
+		writePersistedAgentFileChanges(currentId, last?.content ?? '', true, new Set());
 	}, [shell, currentId]);
 
 	const onRevertAllEdits = useCallback(async () => {
@@ -1621,7 +1697,10 @@ export default function App() {
 		} catch {
 			/* IPC error — still dismiss panel to unblock the user */
 		}
+		setDismissedFiles(new Set());
 		setFileChangesDismissed(true);
+		const last = [...messagesRef.current].reverse().find((m) => m.role === 'assistant');
+		writePersistedAgentFileChanges(currentId, last?.content ?? '', true, new Set());
 	}, [shell, composerMode, currentId, refreshGit]);
 
 	const onKeepFileEdit = useCallback(async (relPath: string) => {
@@ -1629,7 +1708,17 @@ export default function App() {
 		try {
 			await shell.invoke('agent:keepFile', currentId, relPath);
 		} catch { /* ignore */ }
-		setDismissedFiles((prev) => new Set(prev).add(relPath));
+		setDismissedFiles((prev) => {
+			const next = new Set(prev).add(relPath);
+			const last = [...messagesRef.current].reverse().find((m) => m.role === 'assistant');
+			writePersistedAgentFileChanges(
+				currentId,
+				last?.content ?? '',
+				fileChangesDismissedRef.current,
+				next
+			);
+			return next;
+		});
 	}, [shell, currentId]);
 
 	const onRevertFileEdit = useCallback(async (relPath: string) => {
@@ -1638,7 +1727,17 @@ export default function App() {
 			await shell.invoke('agent:revertFile', currentId, relPath);
 			void refreshGit();
 		} catch { /* ignore */ }
-		setDismissedFiles((prev) => new Set(prev).add(relPath));
+		setDismissedFiles((prev) => {
+			const next = new Set(prev).add(relPath);
+			const last = [...messagesRef.current].reverse().find((m) => m.role === 'assistant');
+			writePersistedAgentFileChanges(
+				currentId,
+				last?.content ?? '',
+				fileChangesDismissedRef.current,
+				next
+			);
+			return next;
+		});
 	}, [shell, currentId, refreshGit]);
 
 	const onMessagesScroll = useCallback(() => {
