@@ -53,6 +53,9 @@ export async function streamOpenAICompatible(
 	const effort = openAIReasoningEffort(options.thinkingLevel ?? 'off');
 
 	let full = '';
+	let buffer = '';
+	let inThinking = false;
+
 	try {
 		const stream = await client.chat.completions.create(
 			{
@@ -69,12 +72,84 @@ export async function streamOpenAICompatible(
 			if (options.signal.aborted) {
 				break;
 			}
+
+			// 1. natively supported reasoning_content (e.g. DeepSeek API)
+			// eslint-disable-next  @typescript-eslint/no-explicit-any
+			const reasoningPiece = (chunk.choices[0]?.delta as any)?.reasoning_content ?? '';
+			if (reasoningPiece) {
+				handlers.onThinkingDelta?.(reasoningPiece);
+			}
+
+			// 2. parse <think> tags in content
 			const piece = chunk.choices[0]?.delta?.content ?? '';
 			if (piece) {
-				full += piece;
-				handlers.onDelta(piece);
+				buffer += piece;
+
+				while (buffer.length > 0) {
+					if (!inThinking) {
+						const openIdx = buffer.indexOf('<think>');
+						if (openIdx !== -1) {
+							const textBefore = buffer.slice(0, openIdx);
+							if (textBefore) {
+								full += textBefore;
+								handlers.onDelta(textBefore);
+							}
+							inThinking = true;
+							buffer = buffer.slice(openIdx + 7);
+						} else {
+							// Check for partial '<think>' at the end
+							const partialOpen = ['<', '<t', '<th', '<thi', '<thin', '<think'].find((p) => buffer.endsWith(p));
+							if (partialOpen) {
+								const safeText = buffer.slice(0, buffer.length - partialOpen.length);
+								if (safeText) {
+									full += safeText;
+									handlers.onDelta(safeText);
+								}
+								buffer = partialOpen;
+								break; // wait for next chunk
+							} else {
+								full += buffer;
+								handlers.onDelta(buffer);
+								buffer = '';
+							}
+						}
+					} else {
+						const closeIdx = buffer.indexOf('</think>');
+						if (closeIdx !== -1) {
+							const thinkText = buffer.slice(0, closeIdx);
+							if (thinkText) {
+								handlers.onThinkingDelta?.(thinkText);
+							}
+							inThinking = false;
+							buffer = buffer.slice(closeIdx + 8);
+						} else {
+							const partialClose = ['<', '</', '</t', '</th', '</thi', '</thin', '</think'].find((p) => buffer.endsWith(p));
+							if (partialClose) {
+								const safeText = buffer.slice(0, buffer.length - partialClose.length);
+								if (safeText) {
+									handlers.onThinkingDelta?.(safeText);
+								}
+								buffer = partialClose;
+								break;
+							} else {
+								handlers.onThinkingDelta?.(buffer);
+								buffer = '';
+							}
+						}
+					}
+				}
 			}
 		}
+
+		if (buffer) {
+			if (inThinking) {
+				handlers.onThinkingDelta?.(buffer);
+			} else {
+				full += buffer;
+				handlers.onDelta(buffer);
+			}
+		}
+
 		handlers.onDone(full);
 	} catch (e: unknown) {
 		if (options.signal.aborted) {

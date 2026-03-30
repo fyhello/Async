@@ -1,4 +1,6 @@
-type Props = { lang: string; body: string };
+import { useI18n } from './i18n';
+
+type Props = { lang: string; body: string; onRun?: () => void };
 
 function IconTerminal({ className }: { className?: string }) {
 	return (
@@ -10,7 +12,8 @@ function IconTerminal({ className }: { className?: string }) {
 }
 
 /** 短命令块（npm run / 验证构建等），参考 Cursor 侧栏命令行条目 */
-export function AgentCommandCard({ lang, body }: Props) {
+export function AgentCommandCard({ lang, body, onRun }: Props) {
+	const { t } = useI18n();
 	return (
 		<div className="ref-agent-command-card" role="note" aria-label="命令">
 			<span className="ref-agent-command-ico" aria-hidden>
@@ -20,6 +23,13 @@ export function AgentCommandCard({ lang, body }: Props) {
 				<span className="ref-agent-command-lang">{lang}</span>
 				<pre className="ref-agent-command-pre">{body}</pre>
 			</div>
+			{onRun ? (
+				<button type="button" className="ref-agent-command-run" onClick={onRun} title={t('agent.command.run', 'Run in Terminal')}>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+					</svg>
+				</button>
+			) : null}
 		</div>
 	);
 }

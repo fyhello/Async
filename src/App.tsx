@@ -21,7 +21,6 @@ import {
 	coerceThinkingByModelId,
 	type ThinkingLevel,
 } from './ipcTypes';
-import { AgentStreamingToolPreview } from './AgentStreamingToolPreview';
 import { AgentReviewPanel } from './AgentReviewPanel';
 import { AgentFileChangesPanel } from './AgentFileChanges';
 import {
@@ -479,11 +478,6 @@ export default function App() {
 	const [defaultModel, setDefaultModel] = useState(AUTO_MODEL_ID);
 	const [thinkingByModelId, setThinkingByModelId] = useState<Record<string, ThinkingLevel>>({});
 	const [streamingThinking, setStreamingThinking] = useState('');
-	const [streamingToolPreview, setStreamingToolPreview] = useState<{
-		name: string;
-		partialJson: string;
-		index: number;
-	} | null>(null);
 	const [modelEntries, setModelEntries] = useState<UserModelEntry[]>([]);
 	const [enabledModelIds, setEnabledModelIds] = useState<string[]>([]);
 	const [agentCustomization, setAgentCustomization] = useState<AgentCustomization>(() => defaultAgentCustomization());
@@ -827,14 +821,7 @@ export default function App() {
 				});
 			} else if (payload.type === 'thinking_delta') {
 				setStreamingThinking((s) => s + payload.text);
-			} else if (payload.type === 'tool_input_delta') {
-				setStreamingToolPreview({
-					name: payload.name,
-					partialJson: payload.partialJson,
-					index: payload.index,
-				});
 			} else if (payload.type === 'tool_call') {
-				setStreamingToolPreview(null);
 				const marker = `\n<tool_call tool="${payload.name}">${payload.args}</tool_call>\n`;
 				setStreaming((s) => s + marker);
 			} else if (payload.type === 'tool_result') {
@@ -861,7 +848,6 @@ export default function App() {
 				setAwaitingReply(false);
 				setStreaming('');
 				setStreamingThinking('');
-				setStreamingToolPreview(null);
 				setFileChangesDismissed(false);
 				setDismissedFiles(new Set());
 				if (payload.pendingAgentPatches && payload.pendingAgentPatches.length > 0) {
@@ -916,7 +902,6 @@ export default function App() {
 				setAwaitingReply(false);
 				setStreaming('');
 				setStreamingThinking('');
-				setStreamingToolPreview(null);
 				setMessages((m) => [
 					...m,
 					{ role: 'assistant', content: t('app.errorPrefix', { message: translateChatError(payload.message, t) }) },
@@ -1146,7 +1131,6 @@ export default function App() {
 		}
 		setStreaming('');
 		setStreamingThinking('');
-		setStreamingToolPreview(null);
 		setWorkedSeconds(null);
 		firstTokenAtRef.current = null;
 		streamStartedAtRef.current = Date.now();
@@ -1188,12 +1172,8 @@ export default function App() {
 			return;
 		}
 		await shell.invoke('chat:abort', currentId);
-		streamStartedAtRef.current = null;
-		firstTokenAtRef.current = null;
+		// Let the 'done' event from backend finalize the state
 		setAwaitingReply(false);
-		setStreaming('');
-		setStreamingThinking('');
-		setStreamingToolPreview(null);
 	};
 
 	const onPlanQuestionSubmit = (answer: string) => {
@@ -2352,24 +2332,13 @@ export default function App() {
 													}
 													workspaceRoot={workspace}
 													onOpenAgentFile={(rel, line) => void onExplorerOpenFile(rel, line)}
+													onRunCommand={(cmd) => {
+														shell?.invoke('terminal:execLine', cmd).catch(console.error);
+														// Optionally switch tab to terminal if needed, but here we just run it
+													}}
 													showAgentWorking={composerMode === 'agent' && isLast && awaitingReply}
 												/>
 											)}
-											{composerMode === 'agent' &&
-											isLast &&
-											awaitingReply &&
-											streamingToolPreview ? (
-												<AgentStreamingToolPreview
-													toolName={streamingToolPreview.name}
-													partialJson={streamingToolPreview.partialJson}
-													toolIndex={streamingToolPreview.index}
-													labels={{
-														title: t('agent.streamTool.title'),
-														path: t('agent.streamTool.path'),
-														streaming: t('agent.streamTool.streaming'),
-													}}
-												/>
-											) : null}
 										</div>
 									</div>
 								);

@@ -23,6 +23,7 @@ export type FileEditSegment = {
 	oldStr?: string;
 	newStr?: string;
 	isNew?: boolean;
+	isStreaming?: boolean;
 };
 
 export type ActivityStatus = 'info' | 'pending' | 'success' | 'error';
@@ -43,6 +44,11 @@ export type ToolCallSegment = {
 	success?: boolean;
 };
 
+export type PlanTodoSegment = {
+	type: 'plan_todo';
+	todos: Array<{ id: string; content: string; status: 'pending' | 'completed' }>;
+};
+
 export type AssistantSegment =
 	| { type: 'markdown'; text: string }
 	| { type: 'diff'; diff: string }
@@ -50,7 +56,8 @@ export type AssistantSegment =
 	| ActivitySegment
 	| { type: 'file_changes'; files: FileChangeSummary[] }
 	| FileEditSegment
-	| ToolCallSegment;
+	| ToolCallSegment
+	| PlanTodoSegment;
 
 const ACTIVITY_PARAGRAPH =
 	/^(Explored\b|Ran\b|Verified\b|Verify\b|Linting\b|Linted\b|Searched\b|Checked\b|Reading\b|Editing\b|Searching\b|Wrote\b|Updated\b|Applied\b|Running\b)[\s\S]{0,500}$/i;
@@ -109,6 +116,39 @@ const TOOL_RESULT_CLOSE_ESC = '</tool\u200c_result>';
 const WRITE_TOOLS = new Set(['str_replace', 'write_to_file']);
 
 const TOOL_CALL_OPEN = '<tool_call tool="';
+const PLAN_OPEN_1 = '<plan>';
+const PLAN_OPEN_2 = '<todo>';
+
+function unescapeJsonFragment(s: string): string {
+	let out = '';
+	let i = 0;
+	while (i < s.length) {
+		const c = s[i]!;
+		if (c === '\\' && i + 1 < s.length) {
+			const n = s[i + 1]!;
+			if (n === 'n') out += '\n';
+			else if (n === 't') out += '\t';
+			else if (n === 'r') out += '\r';
+			else if (n === '"') out += '"';
+			else if (n === '\\') out += '\\';
+			else out += n;
+			i += 2;
+			continue;
+		}
+		if (c === '"') break;
+		out += c;
+		i++;
+	}
+	return out;
+}
+
+function tailAfterKey(partialJson: string, key: string): string | null {
+	const re = new RegExp(`"${key}"\\s*:\\s*"`, 'm');
+	const m = partialJson.match(re);
+	if (m == null || m.index === undefined) return null;
+	const start = m.index + m[0].length;
+	return unescapeJsonFragment(partialJson.slice(start));
+}
 
 type ParsedMarker = {
 	start: number;
@@ -117,6 +157,9 @@ type ParsedMarker = {
 	args: Record<string, unknown>;
 	result?: string;
 	success?: boolean;
+	isStreaming?: boolean;
+	rawJson?: string;
+	isPlan?: boolean;
 };
 
 function skipJsonObject(s: string, i: number): number {
@@ -171,32 +214,74 @@ function findAllToolCallMarkers(content: string): ParsedMarker[] {
 		const name = content.slice(nameStart, nameEnd);
 		const jsonStart = nameEnd + 2;
 		const jsonEnd = skipJsonObject(content, jsonStart);
-		if (jsonEnd === -1) {
-			from = start + TOOL_CALL_OPEN.length;
-			continue;
-		}
 		const close = '</tool_call>';
-		const closeIdx = content.indexOf(close, jsonEnd);
-		if (closeIdx === -1) {
-			break;
-		}
+
 		let args: Record<string, unknown> = {};
-		try {
-			const parsed: unknown = JSON.parse(content.slice(jsonStart, jsonEnd));
-			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-				args = parsed as Record<string, unknown>;
+		let isStreaming = false;
+		let rawJson = '';
+		let fullEnd = start;
+
+		if (jsonEnd === -1) {
+			isStreaming = true;
+			rawJson = content.slice(jsonStart);
+			fullEnd = content.length;
+		} else {
+			const closeIdx = content.indexOf(close, jsonEnd);
+			if (closeIdx === -1) {
+				isStreaming = true;
+				rawJson = content.slice(jsonStart, jsonEnd);
+				fullEnd = content.length;
+				try {
+					const parsed: unknown = JSON.parse(rawJson);
+					if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+						args = parsed as Record<string, unknown>;
+					}
+				} catch {
+					// ignore
+				}
+			} else {
+				rawJson = content.slice(jsonStart, jsonEnd);
+				fullEnd = closeIdx + close.length;
+				try {
+					const parsed: unknown = JSON.parse(rawJson);
+					if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+						args = parsed as Record<string, unknown>;
+					}
+				} catch {
+					args = {};
+				}
 			}
-		} catch {
-			args = {};
 		}
+
 		markers.push({
 			start,
-			end: closeIdx + close.length,
+			end: fullEnd,
 			name,
 			args,
+			isStreaming,
+			rawJson,
 		});
-		from = closeIdx + close.length;
+
+		if (isStreaming) {
+			break;
+		}
+
+		from = fullEnd;
 	}
+
+	const planRe = /<(plan|todo)>([\s\S]*?)(?:<\/\1>|$)/gi;
+	let mPlan;
+	while ((mPlan = planRe.exec(content)) !== null) {
+		markers.push({
+			start: mPlan.index,
+			end: mPlan.index + mPlan[0].length,
+			name: mPlan[1]!.toLowerCase(),
+			args: {},
+			isPlan: true,
+			rawJson: mPlan[2],
+		});
+	}
+
 	return markers;
 }
 
@@ -267,9 +352,16 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 	const failed = mk.success === false;
 	const detail = failed ? compactActivityDetail(mk.result, t) : undefined;
 	const summary = (!inProgress && !failed) ? extractResultSummary(mk.name, mk.result, t) : undefined;
+	
+	const getPath = (argName = 'path') => {
+		if (mk.args[argName]) return String(mk.args[argName]);
+		if (mk.isStreaming && mk.rawJson) return tailAfterKey(mk.rawJson, argName) ?? '';
+		return '';
+	};
+
 	switch (mk.name) {
 		case 'read_file': {
-			const p = String(mk.args.path ?? '');
+			const p = getPath();
 			return {
 				type: 'activity',
 				text: inProgress ? t('agent.activity.reading', { path: p }) : t('agent.activity.read', { path: p }),
@@ -279,7 +371,7 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 			};
 		}
 		case 'write_to_file': {
-			const p = String(mk.args.path ?? '');
+			const p = getPath();
 			let text = t('agent.activity.wrote', { path: p });
 			if (typeof mk.result === 'string') {
 				if (mk.result.startsWith('Created ')) text = t('agent.activity.created', { path: p });
@@ -297,7 +389,7 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 			};
 		}
 		case 'str_replace': {
-			const p = String(mk.args.path ?? '');
+			const p = getPath();
 			return {
 				type: 'activity',
 				text: failed
@@ -310,7 +402,7 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 			};
 		}
 		case 'list_dir': {
-			const p = String(mk.args.path ?? '') || '.';
+			const p = getPath() || '.';
 			return {
 				type: 'activity',
 				text: inProgress ? t('agent.activity.listing', { path: p }) : t('agent.activity.listed', { path: p }),
@@ -320,7 +412,7 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 			};
 		}
 		case 'search_files': {
-			const pat = String(mk.args.pattern ?? '');
+			const pat = getPath('pattern');
 			return {
 				type: 'activity',
 				text: inProgress
@@ -332,7 +424,7 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 			};
 		}
 		case 'execute_command': {
-			const cmd = String(mk.args.command ?? '').slice(0, 60);
+			const cmd = getPath('command').slice(0, 60);
 			return {
 				type: 'activity',
 				text: failed
@@ -396,34 +488,87 @@ function extractToolSegments(content: string, t: TFunction): { segments: Assista
 			if (text) segments.push(...segmentParagraphsForActivity(text));
 		}
 
+		if (mk.isPlan) {
+			const lines = (mk.rawJson || '').split('\n');
+			const todos: Array<{ id: string; content: string; status: 'pending' | 'completed' }> = [];
+			let stepNum = 0;
+			for (const line of lines) {
+				const m = line.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
+				if (m) {
+					stepNum++;
+					todos.push({
+						id: `todo-${mk.start}-${stepNum}`,
+						content: m[2]!.trim(),
+						status: m[1]!.trim().toLowerCase() === 'x' ? 'completed' : 'pending',
+					});
+				}
+			}
+			if (todos.length > 0) {
+				segments.push({ type: 'plan_todo', todos });
+			}
+			cursor = mk.end;
+			continue;
+		}
+
 		const activity = summarizeToolActivity(mk, t);
 
-		if (WRITE_TOOLS.has(mk.name) && mk.success) {
-			segments.push(activity);
-			const filePath = String(mk.args.path ?? '');
-			if (mk.name === 'str_replace') {
-				const oldStr = String(mk.args.old_str ?? '');
-				const newStr = String(mk.args.new_str ?? '');
-				const lineMatch = mk.result?.match(/at line (\d+)/);
-				segments.push({
-					type: 'file_edit',
-					path: filePath,
-					additions: countLines(newStr),
-					deletions: countLines(oldStr),
-					startLine: lineMatch ? parseInt(lineMatch[1]!, 10) : undefined,
-					oldStr: clipPreviewText(oldStr),
-					newStr: clipPreviewText(newStr),
-				});
+		if (WRITE_TOOLS.has(mk.name)) {
+			if (mk.success) {
+				segments.push(activity);
+				const filePath = String(mk.args.path ?? '');
+				if (mk.name === 'str_replace') {
+					const oldStr = String(mk.args.old_str ?? '');
+					const newStr = String(mk.args.new_str ?? '');
+					const lineMatch = mk.result?.match(/at line (\d+)/);
+					segments.push({
+						type: 'file_edit',
+						path: filePath,
+						additions: countLines(newStr),
+						deletions: countLines(oldStr),
+						startLine: lineMatch ? parseInt(lineMatch[1]!, 10) : undefined,
+						oldStr: clipPreviewText(oldStr),
+						newStr: clipPreviewText(newStr),
+					});
+				} else {
+					const c = String(mk.args.content ?? '');
+					segments.push({
+						type: 'file_edit',
+						path: filePath,
+						additions: countLines(c),
+						deletions: 0,
+						newStr: clipPreviewText(c),
+						isNew: true,
+					});
+				}
+			} else if (mk.isStreaming && mk.rawJson) {
+				segments.push(activity);
+				const pathGuess = tailAfterKey(mk.rawJson, 'path') ?? String(mk.args.path ?? '');
+				if (mk.name === 'str_replace') {
+					const oldStr = tailAfterKey(mk.rawJson, 'old_str') ?? String(mk.args.old_str ?? '');
+					const newStr = tailAfterKey(mk.rawJson, 'new_str') ?? String(mk.args.new_str ?? '');
+					segments.push({
+						type: 'file_edit',
+						path: pathGuess,
+						additions: countLines(newStr),
+						deletions: countLines(oldStr),
+						oldStr: clipPreviewText(oldStr),
+						newStr: clipPreviewText(newStr),
+						isStreaming: true,
+					});
+				} else {
+					const c = tailAfterKey(mk.rawJson, 'content') ?? String(mk.args.content ?? '');
+					segments.push({
+						type: 'file_edit',
+						path: pathGuess,
+						additions: countLines(c),
+						deletions: 0,
+						newStr: clipPreviewText(c),
+						isNew: true,
+						isStreaming: true,
+					});
+				}
 			} else {
-				const c = String(mk.args.content ?? '');
-				segments.push({
-					type: 'file_edit',
-					path: filePath,
-					additions: countLines(c),
-					deletions: 0,
-					newStr: clipPreviewText(c),
-					isNew: true,
-				});
+				segments.push(activity);
 			}
 		} else {
 			segments.push(activity);

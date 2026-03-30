@@ -44,7 +44,7 @@ export function AgentEditCard({ edit, onOpenFile }: Props) {
 	const visibleLines = expanded ? previewLines : previewLines.slice(0, COLLAPSED_PREVIEW_LINES);
 
 	return (
-		<div className="ref-edit-card">
+		<div className={`ref-edit-card ${edit.isStreaming ? 'ref-edit-card--streaming' : ''}`}>
 			<button
 				type="button"
 				className="ref-edit-card-file"
@@ -57,14 +57,18 @@ export function AgentEditCard({ edit, onOpenFile }: Props) {
 					className="ref-edit-card-icon"
 				/>
 				<span className="ref-edit-card-name">{name}</span>
-				<span className="ref-edit-card-stats">
-					{edit.additions > 0 && (
-						<span className="ref-fc-add">+{edit.additions}</span>
-					)}
-					{edit.deletions > 0 && (
-						<span className="ref-fc-del">-{edit.deletions}</span>
-					)}
-				</span>
+				{edit.isStreaming ? (
+					<span className="ref-edit-card-streaming-pulse" title="Writing..." />
+				) : (
+					<span className="ref-edit-card-stats">
+						{edit.additions > 0 && (
+							<span className="ref-fc-add">+{edit.additions}</span>
+						)}
+						{edit.deletions > 0 && (
+							<span className="ref-fc-del">-{edit.deletions}</span>
+						)}
+					</span>
+				)}
 			</button>
 			{previewLines.length > 0 ? (
 				<div className="ref-edit-card-preview-wrap">
