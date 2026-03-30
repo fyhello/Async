@@ -71,7 +71,8 @@ import { BrandLogo } from './BrandLogo';
 import { defaultAgentCustomization, type AgentCustomization } from './agentSettingsTypes';
 import { defaultEditorSettings, editorSettingsToMonacoOptions, type EditorSettings } from './EditorSettingsPanel';
 import { EditorTabBar, tabIdFromPath, type EditorTab } from './EditorTabBar';
-import { QuickOpenPalette, quickOpenPrimaryShortcutLabel } from './quickOpenPalette';
+import { MenubarFileMenu } from './MenubarFileMenu';
+import { QuickOpenPalette, quickOpenPrimaryShortcutLabel, saveShortcutLabel } from './quickOpenPalette';
 
 type LayoutMode = 'agent' | 'editor';
 import { useI18n, translateChatError, normalizeLocale, type AppLocale, type TFunction } from './i18n';
@@ -633,6 +634,8 @@ export default function App() {
 	const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => defaultEditorSettings());
 	const [layoutMode, setLayoutMode] = useState<LayoutMode>('editor');
 	const [homeRecents, setHomeRecents] = useState<string[]>([]);
+	/** 文件菜单「打开最近的文件夹」：与是否打开工作区无关 */
+	const [folderRecents, setFolderRecents] = useState<string[]>([]);
 	const [openTabs, setOpenTabs] = useState<EditorTab[]>([]);
 	const [activeTabId, setActiveTabId] = useState<string | null>(null);
 	const [filePath, setFilePath] = useState('');
@@ -654,6 +657,8 @@ export default function App() {
 	const editorTerminalCreateLockRef = useRef(false);
 	const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
 	const terminalMenuRef = useRef<HTMLDivElement>(null);
+	const [fileMenuOpen, setFileMenuOpen] = useState(false);
+	const fileMenuRef = useRef<HTMLDivElement>(null);
 	const [homePath, setHomePath] = useState('');
 	const [railWidths, setRailWidths] = useState(() => {
 		const s = readSidebarLayout();
@@ -1184,6 +1189,29 @@ export default function App() {
 			} catch {
 				if (!cancelled) {
 					setHomeRecents([]);
+				}
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [shell, workspace]);
+
+	useEffect(() => {
+		if (!shell) {
+			setFolderRecents([]);
+			return;
+		}
+		let cancelled = false;
+		void (async () => {
+			try {
+				const r = (await shell.invoke('workspace:listRecents')) as { paths?: string[] };
+				if (!cancelled) {
+					setFolderRecents(Array.isArray(r.paths) ? r.paths.slice(0, 14) : []);
+				}
+			} catch {
+				if (!cancelled) {
+					setFolderRecents([]);
 				}
 			}
 		})();
@@ -1837,6 +1865,133 @@ export default function App() {
 		setEditorTerminalVisible(false);
 	}, [shell]);
 
+	const closeWorkspaceFolder = useCallback(async () => {
+		if (!shell) {
+			setWorkspacePickerOpen(true);
+			return;
+		}
+		await shell.invoke('workspace:closeFolder');
+		closeEditorTerminalPanel();
+		setWorkspace(null);
+		setOpenTabs([]);
+		setActiveTabId(null);
+		setFilePath('');
+		setEditorValue('');
+		pendingEditorHighlightRangeRef.current = null;
+		await refreshGit();
+	}, [shell, closeEditorTerminalPanel, refreshGit]);
+
+	const fileMenuNewFile = useCallback(async () => {
+		if (!shell || !workspace) {
+			return;
+		}
+		const r = (await shell.invoke('fs:pickSaveFile', {
+			defaultName: 'Untitled.txt',
+			title: t('app.fileMenu.newFileSaveTitle'),
+		})) as { ok?: boolean; relPath?: string };
+		if (!r?.ok || !r.relPath) {
+			return;
+		}
+		await shell.invoke('fs:writeFile', r.relPath, '');
+		await openFileInTab(r.relPath);
+	}, [shell, workspace, t, openFileInTab]);
+
+	const fileMenuOpenFile = useCallback(async () => {
+		if (!shell || !workspace) {
+			return;
+		}
+		const r = (await shell.invoke('fs:pickOpenFile')) as { ok?: boolean; relPath?: string };
+		if (r?.ok && r.relPath) {
+			await openFileInTab(r.relPath);
+		}
+	}, [shell, workspace, openFileInTab]);
+
+	const fileMenuOpenFolder = useCallback(async () => {
+		if (!shell) {
+			setWorkspacePickerOpen(true);
+			return;
+		}
+		const r = (await shell.invoke('workspace:pickFolder')) as { ok?: boolean; path?: string };
+		if (r?.ok && r.path) {
+			await applyWorkspacePath(r.path);
+		}
+	}, [shell, applyWorkspacePath]);
+
+	const fileMenuSaveAs = useCallback(async () => {
+		if (!shell || !workspace) {
+			return;
+		}
+		const defaultName = filePath.trim()
+			? (filePath.trim().split(/[/\\]/).pop() ?? 'Untitled.txt')
+			: 'Untitled.txt';
+		const r = (await shell.invoke('fs:pickSaveFile', {
+			defaultName,
+			title: t('app.fileMenu.saveAsDialogTitle'),
+		})) as { ok?: boolean; relPath?: string };
+		if (!r?.ok || !r.relPath) {
+			return;
+		}
+		const savedRel = r.relPath;
+		await shell.invoke('fs:writeFile', savedRel, editorValue);
+		const newTid = tabIdFromPath(savedRel);
+		setOpenTabs((prev) => {
+			const idx = activeTabId
+				? prev.findIndex((t2) => t2.id === activeTabId)
+				: filePath.trim()
+					? prev.findIndex((t2) => t2.filePath === filePath.trim())
+					: -1;
+			if (idx >= 0) {
+				const next = [...prev];
+				next[idx] = { id: newTid, filePath: savedRel, dirty: false };
+				return next;
+			}
+			return [...prev, { id: newTid, filePath: savedRel, dirty: false }];
+		});
+		setActiveTabId(newTid);
+		setFilePath(savedRel);
+		setSaveToastKey((k) => k + 1);
+		setSaveToastVisible(true);
+		setTimeout(() => setSaveToastVisible(false), 1900);
+		await refreshGit();
+	}, [shell, workspace, filePath, editorValue, activeTabId, t, refreshGit]);
+
+	const fileMenuRevertFile = useCallback(async () => {
+		if (!shell || !filePath.trim()) {
+			return;
+		}
+		try {
+			const r = (await shell.invoke('fs:readFile', filePath.trim())) as { ok?: boolean; content?: string };
+			if (r?.ok && r.content !== undefined) {
+				setEditorValue(r.content);
+				const p = filePath.trim();
+				setOpenTabs((prev) => prev.map((tab) => (tab.filePath === p ? { ...tab, dirty: false } : tab)));
+			}
+		} catch {
+			/* ignore */
+		}
+	}, [shell, filePath]);
+
+	const fileMenuCloseEditor = useCallback(() => {
+		if (activeTabId) {
+			onCloseTab(activeTabId);
+		}
+	}, [activeTabId, onCloseTab]);
+
+	const fileMenuNewWindow = useCallback(async () => {
+		if (!shell) {
+			return;
+		}
+		await shell.invoke('app:newWindow');
+	}, [shell]);
+
+	const fileMenuQuit = useCallback(async () => {
+		if (shell) {
+			await shell.invoke('app:quit');
+		} else {
+			window.close();
+		}
+	}, [shell]);
+
 	const closeEditorTerminalSession = useCallback(
 		(id: string) => {
 			void shell?.invoke('terminal:ptyKill', id);
@@ -1880,6 +2035,20 @@ export default function App() {
 		document.addEventListener('mousedown', onDoc);
 		return () => document.removeEventListener('mousedown', onDoc);
 	}, [terminalMenuOpen]);
+
+	useEffect(() => {
+		if (!fileMenuOpen) {
+			return;
+		}
+		const onDoc = (e: MouseEvent) => {
+			if (fileMenuRef.current?.contains(e.target as Node)) {
+				return;
+			}
+			setFileMenuOpen(false);
+		};
+		document.addEventListener('mousedown', onDoc);
+		return () => document.removeEventListener('mousedown', onDoc);
+	}, [fileMenuOpen]);
 
 	// Ctrl/Cmd+P quick open, Ctrl/Cmd+Shift+P command mode (VS Code-style)
 	useEffect(() => {
@@ -3071,9 +3240,45 @@ export default function App() {
 						<BrandLogo className="ref-brand-logo" size={22} />
 					</div>
 					<nav className="ref-menu-nav" aria-label={t('app.menu')}>
+						<div className="ref-menu-dropdown-wrap" ref={fileMenuRef}>
+							<button
+								type="button"
+								className={`ref-menu-item${fileMenuOpen ? ' is-active' : ''}`}
+								aria-expanded={fileMenuOpen}
+								aria-haspopup="menu"
+								onClick={() => {
+									setTerminalMenuOpen(false);
+									setFileMenuOpen((o) => !o);
+								}}
+							>
+								{t('app.menuFile')}
+							</button>
+							{fileMenuOpen ? (
+								<MenubarFileMenu
+									onClose={() => setFileMenuOpen(false)}
+									isDesktopShell={!!shell}
+									hasWorkspace={!!workspace}
+									folderRecents={folderRecents}
+									canSave={!!shell && !!workspace && !!filePath.trim()}
+									canEditorClose={!!activeTabId}
+									canCloseFolder={!!shell && !!workspace}
+									shortcutSave={saveShortcutLabel()}
+									onNewFile={() => void fileMenuNewFile()}
+									onNewWindow={() => void fileMenuNewWindow()}
+									onOpenFile={() => void fileMenuOpenFile()}
+									onOpenFolder={() => void fileMenuOpenFolder()}
+									onOpenRecentPath={(p) => void openWorkspaceByPath(p)}
+									onSave={() => void onSaveFile()}
+									onSaveAs={() => void fileMenuSaveAs()}
+									onRevert={() => void fileMenuRevertFile()}
+									onCloseEditor={() => fileMenuCloseEditor()}
+									onCloseFolder={() => void closeWorkspaceFolder()}
+									onQuit={() => void fileMenuQuit()}
+								/>
+							) : null}
+						</div>
 						{(
 							[
-								['File', t('app.menuFile')],
 								['Edit', t('app.menuEdit')],
 								['View', t('app.menuView')],
 								['Help', t('app.menuHelp')],
@@ -3090,7 +3295,10 @@ export default function App() {
 									className={`ref-menu-item${terminalMenuOpen ? ' is-active' : ''}`}
 									aria-expanded={terminalMenuOpen}
 									aria-haspopup="menu"
-									onClick={() => setTerminalMenuOpen((o) => !o)}
+									onClick={() => {
+										setFileMenuOpen(false);
+										setTerminalMenuOpen((o) => !o);
+									}}
 								>
 									{t('app.menuTerminal')}
 									<IconChevron className="ref-menu-chevron" />

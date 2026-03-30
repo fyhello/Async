@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { createAppWindow } from '../appWindow.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -209,6 +210,67 @@ export function registerIpc(): void {
 	}));
 
 	ipcMain.handle('workspace:get', () => ({ root: getWorkspaceRoot() }));
+
+	ipcMain.handle('workspace:closeFolder', () => {
+		setWorkspaceRoot(null);
+		return { ok: true as const };
+	});
+
+	ipcMain.handle('app:newWindow', () => {
+		createAppWindow();
+		return { ok: true as const };
+	});
+
+	ipcMain.handle('app:quit', () => {
+		app.quit();
+		return { ok: true as const };
+	});
+
+	ipcMain.handle('fs:pickOpenFile', async (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		const root = getWorkspaceRoot();
+		if (!root) {
+			return { ok: false as const, error: 'no-workspace' as const };
+		}
+		const r = await dialog.showOpenDialog(win ?? undefined, {
+			properties: ['openFile'],
+			defaultPath: root,
+		});
+		if (r.canceled || !r.filePaths[0]) {
+			return { ok: false as const, canceled: true as const };
+		}
+		const picked = path.resolve(r.filePaths[0]);
+		if (!isPathInsideRoot(picked, root)) {
+			return { ok: false as const, error: 'outside-workspace' as const };
+		}
+		const rel = path.relative(root, picked).split(path.sep).join('/');
+		return { ok: true as const, relPath: rel };
+	});
+
+	ipcMain.handle(
+		'fs:pickSaveFile',
+		async (event, opts?: { defaultName?: string; title?: string }) => {
+			const win = BrowserWindow.fromWebContents(event.sender);
+			const root = getWorkspaceRoot();
+			if (!root) {
+				return { ok: false as const, error: 'no-workspace' as const };
+			}
+			const defaultName = typeof opts?.defaultName === 'string' ? opts.defaultName : 'Untitled.txt';
+			const r = await dialog.showSaveDialog(win ?? undefined, {
+				title: typeof opts?.title === 'string' ? opts.title : 'Save',
+				defaultPath: path.join(root, path.basename(defaultName)),
+			});
+			if (r.canceled || !r.filePath) {
+				return { ok: false as const, canceled: true as const };
+			}
+			const picked = path.resolve(r.filePath);
+			if (!isPathInsideRoot(picked, root)) {
+				return { ok: false as const, error: 'outside-workspace' as const };
+			}
+			const rel = path.relative(root, picked).split(path.sep).join('/');
+			return { ok: true as const, relPath: rel };
+		}
+	);
 
 	ipcMain.handle('workspace:listFiles', () => {
 		const root = getWorkspaceRoot();

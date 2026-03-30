@@ -123,6 +123,11 @@ export function quickOpenPrimaryShortcutLabel(): string {
 	return `${kbdPrimary()}P`;
 }
 
+/** 保存（文件菜单等） */
+export function saveShortcutLabel(): string {
+	return `${kbdPrimary()}S`;
+}
+
 type ActionDef = {
 	id: string;
 	labelKey: string;
