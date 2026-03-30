@@ -70,6 +70,7 @@ import { BrandLogo } from './BrandLogo';
 import { defaultAgentCustomization, type AgentCustomization } from './agentSettingsTypes';
 import { defaultEditorSettings, editorSettingsToMonacoOptions, type EditorSettings } from './EditorSettingsPanel';
 import { EditorTabBar, tabIdFromPath, type EditorTab } from './EditorTabBar';
+import { QuickOpenPalette, quickOpenPrimaryShortcutLabel } from './quickOpenPalette';
 
 type LayoutMode = 'agent' | 'editor';
 import { useI18n, translateChatError, normalizeLocale, type AppLocale, type TFunction } from './i18n';
@@ -583,6 +584,9 @@ export default function App() {
 	const pendingEditorHighlightRangeRef = useRef<{ start: number; end: number } | null>(null);
 	const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
 	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+	const [quickOpenSeed, setQuickOpenSeed] = useState('');
+	const [sidebarSearchDraft, setSidebarSearchDraft] = useState('');
 	const [homePath, setHomePath] = useState('');
 	const [railWidths, setRailWidths] = useState(() => {
 		const s = readSidebarLayout();
@@ -649,6 +653,19 @@ export default function App() {
 		const parts = norm.split('/').filter(Boolean);
 		return parts[parts.length - 1] ?? workspace;
 	}, [workspace, t]);
+
+	const quickOpenRecentFiles = useMemo(() => {
+		const seen = new Set<string>();
+		const out: string[] = [];
+		for (let i = openTabs.length - 1; i >= 0; i--) {
+			const p = openTabs[i]?.filePath;
+			if (p && !seen.has(p)) {
+				seen.add(p);
+				out.push(p);
+			}
+		}
+		return out;
+	}, [openTabs]);
 
 	const { todayThreads, archivedThreads } = useMemo(() => {
 		const q = threadSearch.trim().toLowerCase();
@@ -1670,6 +1687,54 @@ export default function App() {
 	const onExplorerOpenFile = async (rel: string, revealLine?: number, revealEndLine?: number) => {
 		await openFileInTab(rel, revealLine, revealEndLine);
 	};
+
+	const goToLineInEditor = useCallback((line: number) => {
+		const ed = monacoEditorRef.current;
+		if (!ed || !Number.isFinite(line) || line < 1) {
+			return;
+		}
+		try {
+			const model = ed.getModel();
+			const lc = model?.getLineCount() ?? line;
+			const ln = Math.max(1, Math.min(Math.floor(line), lc));
+			ed.setPosition({ lineNumber: ln, column: 1 });
+			ed.revealLineInCenter(ln);
+		} catch {
+			/* ignore */
+		}
+	}, []);
+
+	const openQuickOpen = useCallback((seed = '') => {
+		setQuickOpenSeed(seed);
+		setQuickOpenOpen(true);
+	}, []);
+
+	const focusSearchSidebarFromQuickOpen = useCallback((q: string) => {
+		setSidebarSearchDraft(q);
+		setLayoutMode('agent');
+		setRightPanelTab('search');
+	}, []);
+
+	// Ctrl/Cmd+P quick open, Ctrl/Cmd+Shift+P command mode (VS Code-style)
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			if (quickOpenOpen) {
+				return;
+			}
+			const mod = e.ctrlKey || e.metaKey;
+			if (!mod || e.key.toLowerCase() !== 'p' || e.altKey) {
+				return;
+			}
+			e.preventDefault();
+			if (e.shiftKey) {
+				openQuickOpen('>');
+			} else {
+				openQuickOpen('');
+			}
+		};
+		window.addEventListener('keydown', handler);
+		return () => window.removeEventListener('keydown', handler);
+	}, [quickOpenOpen, openQuickOpen]);
 
 	useEffect(() => {
 		const ed = monacoEditorRef.current;
@@ -2822,10 +2887,16 @@ export default function App() {
 					</nav>
 				</div>
 				<div className="ref-menubar-center">
-					<button type="button" className="ref-global-search-btn" aria-label="Search workspace">
+					<button
+						type="button"
+						className="ref-global-search-btn"
+						aria-label={t('quickOpen.menubarAria')}
+						title={t('quickOpen.placeholder')}
+						onClick={() => openQuickOpen('')}
+					>
 						<IconSearch className="ref-global-search-icon" />
-						<span className="ref-global-search-text">Search files, content, and symbols...</span>
-						<kbd className="ref-global-search-kbd">Ctrl+P</kbd>
+						<span className="ref-global-search-text">{t('quickOpen.menubarSummary')}</span>
+						<kbd className="ref-global-search-kbd">{quickOpenPrimaryShortcutLabel()}</kbd>
 					</button>
 				</div>
 				<div className="ref-menubar-right">
@@ -3364,6 +3435,12 @@ export default function App() {
 					) : rightPanelTab === 'search' ? (
 						<div className="ref-search-stack">
 							<div className="ref-search-head">{t('app.searchPanelTitle')}</div>
+							{sidebarSearchDraft.trim() ? (
+								<div className="ref-search-draft">
+									<span className="ref-search-draft-label">{t('quickOpen.searchDraftLabel')}</span>
+									{sidebarSearchDraft}
+								</div>
+							) : null}
 							<p className="ref-search-placeholder">{t('app.searchPanelHint')}</p>
 						</div>
 					) : (
@@ -3506,6 +3583,27 @@ export default function App() {
 				shell={shell}
 				homePath={homePath}
 				onWorkspaceOpened={(p) => void applyWorkspacePath(p)}
+			/>
+
+			<QuickOpenPalette
+				open={quickOpenOpen}
+				onClose={() => {
+					setQuickOpenOpen(false);
+					setQuickOpenSeed('');
+				}}
+				workspaceOpen={!!workspace}
+				workspaceFiles={workspaceFileList}
+				recentFilePaths={quickOpenRecentFiles}
+				homeRecentFolders={homeRecents}
+				activeFilePath={filePath.trim()}
+				onOpenFile={(rel, a, b) => void onExplorerOpenFile(rel, a, b)}
+				onOpenWorkspaceFolder={(p) => void openWorkspaceByPath(p)}
+				onOpenWorkspacePicker={() => setWorkspacePickerOpen(true)}
+				onOpenSettings={() => openSettingsPage('general')}
+				onFocusSearchSidebar={(q) => focusSearchSidebarFromQuickOpen(q)}
+				onGoToLine={goToLineInEditor}
+				initialQuery={quickOpenSeed}
+				t={t}
 			/>
 
 			{settingsPageOpen ? (
