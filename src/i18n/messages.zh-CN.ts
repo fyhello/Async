@@ -142,6 +142,12 @@ export const messagesZhCN: Record<string, string> = {
 	'thinking.effort.medium': '中',
 	'thinking.effort.high': '高',
 	'thinking.effort.max': '最高',
+	'thinking.badgeTitle': '该条模型（或 Auto）的思考等级，与其他模型独立',
+	'thinking.badge.off': '关',
+	'thinking.badge.low': '低',
+	'thinking.badge.medium': '中',
+	'thinking.badge.high': '高',
+	'thinking.badge.max': '最高',
 
 	// git badges
 	'git.badge.new': '新建',

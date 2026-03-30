@@ -13,6 +13,17 @@ export function coerceThinkingLevel(v: unknown): ThinkingLevel {
 	return ALL_THINKING.includes(s as ThinkingLevel) ? (s as ThinkingLevel) : 'off';
 }
 
+export function coerceThinkingByModelId(raw: unknown): Record<string, ThinkingLevel> {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+		return {};
+	}
+	const out: Record<string, ThinkingLevel> = {};
+	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+		out[k] = coerceThinkingLevel(v);
+	}
+	return out;
+}
+
 /** Agent 审阅：主进程解析出的待应用 unified diff 块 */
 export type AgentPendingPatch = {
 	id: string;

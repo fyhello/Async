@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom';
 import { useI18n } from './i18n';
 import { computeClampedPopoverLayout, type ClampedPopoverLayout } from './anchorPopoverLayout';
-import type { SpeedTag } from './modelCatalog';
 import type { ThinkingLevel } from './ipcTypes';
 import { THINKING_EFFORT_IDS } from './ipcTypes';
 
@@ -10,7 +9,6 @@ export type ModelPickerItem = {
 	id: string;
 	label: string;
 	description: string;
-	speedTag: SpeedTag;
 	subtitle?: string;
 };
 
@@ -44,9 +42,9 @@ type Props = {
 	/** 在右栏底部「管理模型…」进入设置（非「编辑」按钮） */
 	onNavigateToSettings: () => void;
 	onAddModels: () => void;
-	/** 全局思考档位（写入 settings） */
-	thinkingLevel: ThinkingLevel;
-	onThinkingLevelChange: (level: ThinkingLevel) => void;
+	/** 按选择器 id（`auto` 或模型条目 id）读取/写入思考档位 */
+	getThinkingLevel: (modelId: string) => ThinkingLevel;
+	onThinkingLevelChange: (modelId: string, level: ThinkingLevel) => void;
 };
 
 type MenuLayout = ClampedPopoverLayout & { minWidth: number; listMinW: number };
@@ -60,7 +58,7 @@ export function ModelPickerDropdown({
 	onSelectModel,
 	onNavigateToSettings,
 	onAddModels,
-	thinkingLevel,
+	getThinkingLevel,
 	onThinkingLevelChange,
 }: Props) {
 	const { t } = useI18n();
@@ -80,6 +78,8 @@ export function ModelPickerDropdown({
 	const [optsOpen, setOptsOpen] = useState(false);
 	const [optsModelId, setOptsModelId] = useState<string | null>(null);
 
+	const panelModelId = optsOpen ? (optsModelId ?? selectedId) : selectedId;
+	const thinkingLevel = getThinkingLevel(panelModelId);
 	const thinkingOn = thinkingLevel !== 'off';
 
 	useEffect(() => {
@@ -171,11 +171,12 @@ export function ModelPickerDropdown({
 	const focusId = optsOpen && optsModelId ? optsModelId : hoveredId ?? selectedId;
 	const focusItem = items.find((i) => i.id === focusId) ?? items.find((i) => i.id === selectedId);
 
-	const setThinkingToggle = (on: boolean) => {
+	const setThinkingToggle = (modelId: string, on: boolean) => {
+		const cur = getThinkingLevel(modelId);
 		if (on) {
-			onThinkingLevelChange(thinkingLevel === 'off' ? 'medium' : thinkingLevel);
+			onThinkingLevelChange(modelId, cur === 'off' ? 'medium' : cur);
 		} else {
-			onThinkingLevelChange('off');
+			onThinkingLevelChange(modelId, 'off');
 		}
 	};
 
@@ -210,6 +211,7 @@ export function ModelPickerDropdown({
 					>
 						{items.map((m) => {
 							const isSel = selectedId === m.id;
+							const rowThink = getThinkingLevel(m.id);
 							return (
 								<div
 									key={m.id}
@@ -234,11 +236,16 @@ export function ModelPickerDropdown({
 										<IconGlobe />
 									</span>
 									<span className="ref-model-dd-main">
-										<span className="ref-model-dd-label">{m.label}</span>
+										<span className="ref-model-dd-title-row">
+											<span className="ref-model-dd-label">{m.label}</span>
+											<span
+												className={`ref-model-dd-tag ref-model-dd-tag--think ref-model-dd-tag--think-${rowThink}`}
+												title={t('thinking.badgeTitle')}
+											>
+												{t(`thinking.badge.${rowThink}`)}
+											</span>
+										</span>
 										{m.subtitle ? <span className="ref-model-dd-sub">{m.subtitle}</span> : null}
-									</span>
-									<span className={`ref-model-dd-tag ref-model-dd-tag--${m.speedTag.toLowerCase()}`}>
-										{t(`modelPicker.speed.${m.speedTag.toLowerCase()}`)}
 									</span>
 									{isSel ? (
 										<span className="ref-model-dd-check" aria-hidden>
@@ -307,7 +314,7 @@ export function ModelPickerDropdown({
 									className={`ref-model-opts-switch ${thinkingOn ? 'is-on' : ''}`}
 									role="switch"
 									aria-checked={thinkingOn}
-									onClick={() => setThinkingToggle(!thinkingOn)}
+									onClick={() => setThinkingToggle(panelModelId, !thinkingOn)}
 								>
 									<span className="ref-model-opts-switch-knob" />
 								</button>
@@ -323,7 +330,7 @@ export function ModelPickerDropdown({
 											type="button"
 											className={`ref-model-opts-effort-row ${active ? 'is-active' : ''}`}
 											disabled={!thinkingOn}
-											onClick={() => onThinkingLevelChange(id)}
+											onClick={() => onThinkingLevelChange(panelModelId, id)}
 										>
 											<span>{t(`thinking.effort.${id}`)}</span>
 											{active ? (

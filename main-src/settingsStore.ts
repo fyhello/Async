@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AgentCustomization } from './agentSettingsTypes.js';
 import { resolveAsyncDataDir } from './dataDir.js';
-import type { ThinkingLevel } from './llm/thinkingLevel.js';
+import { normalizeThinkingLevel, type ThinkingLevel } from './llm/thinkingLevel.js';
 export type { ThinkingLevel } from './llm/thinkingLevel.js';
 export type { AgentCustomization, AgentRule, AgentSkill, AgentSubagent, AgentCommand } from './agentSettingsTypes.js';
 
@@ -51,8 +51,7 @@ export type ShellSettings = {
 	/** 当前选择：`auto` 或某条用户模型的 id */
 	defaultModel?: string;
 	/**
-	 * 推理/扩展思考强度（Anthropic extended thinking、OpenAI reasoning_effort 等）。
-	 * Gemini 等路径可能忽略。
+	 * @deprecated 已由 `models.thinkingByModelId` 按模型区分；读入时仅用于一次性迁移到各 id。
 	 */
 	thinkingLevel?: ThinkingLevel;
 	models?: {
@@ -60,6 +59,8 @@ export type ShellSettings = {
 		entries?: UserModelEntry[];
 		/** 在选择器中启用的条目 id，顺序决定 Auto 的优先级 */
 		enabledIds?: string[];
+		/** 按选择器 id（`auto` 或某条目的 id）分别存储思考强度 */
+		thinkingByModelId?: Record<string, ThinkingLevel>;
 	};
 	recentWorkspaces?: string[];
 	lastOpenedWorkspace?: string | null;
@@ -72,7 +73,7 @@ export type ShellSettings = {
 const defaultSettings: ShellSettings = {
 	language: 'zh-CN',
 	defaultModel: 'auto',
-	thinkingLevel: 'off',
+	thinkingLevel: 'medium',
 	recentWorkspaces: [],
 	lastOpenedWorkspace: null,
 };
@@ -81,6 +82,58 @@ const MAX_RECENTS = 24;
 
 let cached: ShellSettings = { ...defaultSettings };
 let settingsPath = '';
+
+/** 保证每个选择器 id 在 thinkingByModelId 中有条目；无历史 map 时用旧版全局 thinkingLevel 或 medium 填充。 */
+function migrateThinkingByModel(settings: ShellSettings): { next: ShellSettings; didMutate: boolean } {
+	const entries = settings.models?.entries ?? [];
+	const enabledIds = settings.models?.enabledIds ?? [];
+	const ids = new Set<string>(['auto']);
+	for (const id of enabledIds) {
+		ids.add(String(id));
+	}
+	for (const e of entries) {
+		ids.add(String(e.id));
+	}
+
+	const rawMap = settings.models?.thinkingByModelId;
+	const hadStoredMap = rawMap != null && typeof rawMap === 'object' && !Array.isArray(rawMap);
+
+	const map: Record<string, ThinkingLevel> = {};
+	if (hadStoredMap) {
+		for (const [k, v] of Object.entries(rawMap as Record<string, unknown>)) {
+			map[k] = normalizeThinkingLevel(typeof v === 'string' ? v : undefined);
+		}
+	}
+
+	let didMutate = false;
+	if (!hadStoredMap) {
+		const seed = settings.thinkingLevel != null ? normalizeThinkingLevel(settings.thinkingLevel) : 'medium';
+		for (const id of ids) {
+			map[id] = seed;
+		}
+		didMutate = true;
+	} else {
+		for (const id of ids) {
+			if (map[id] === undefined) {
+				map[id] = 'medium';
+				didMutate = true;
+			}
+		}
+	}
+
+	return {
+		next: {
+			...settings,
+			models: {
+				...(settings.models ?? {}),
+				entries,
+				enabledIds,
+				thinkingByModelId: map,
+			},
+		},
+		didMutate,
+	};
+}
 
 export function initSettingsStore(userData: string): void {
 	const dir = resolveAsyncDataDir(userData);
@@ -95,6 +148,12 @@ export function initSettingsStore(userData: string): void {
 		}
 	} else {
 		cached = { ...defaultSettings };
+	}
+	const migrated = migrateThinkingByModel(cached);
+	cached = migrated.next;
+	if (migrated.didMutate) {
+		save();
+	} else if (!fs.existsSync(settingsPath)) {
 		save();
 	}
 }
@@ -117,6 +176,10 @@ export function patchSettings(partial: Partial<ShellSettings>): ShellSettings {
 						partial.models.enabledIds !== undefined
 							? partial.models.enabledIds
 							: (cached.models?.enabledIds ?? []),
+					thinkingByModelId:
+						partial.models.thinkingByModelId !== undefined
+							? { ...(cached.models?.thinkingByModelId ?? {}), ...partial.models.thinkingByModelId }
+							: (cached.models?.thinkingByModelId ?? {}),
 				}
 			: cached.models;
 
@@ -146,6 +209,7 @@ export function patchSettings(partial: Partial<ShellSettings>): ShellSettings {
 		agent: nextAgent,
 		ui: mergedUi,
 	};
+	cached = migrateThinkingByModel(cached).next;
 	save();
 	return getSettings();
 }

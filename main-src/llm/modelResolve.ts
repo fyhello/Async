@@ -1,4 +1,5 @@
 import type { ModelRequestParadigm, ShellSettings, UserModelEntry } from '../settingsStore.js';
+import { normalizeThinkingLevel, type ThinkingLevel } from './thinkingLevel.js';
 
 export type ResolvedChatModel = {
 	requestModelId: string;
@@ -41,4 +42,12 @@ export function resolveChatModel(settings: ShellSettings, selectionId: string): 
 		return null;
 	}
 	return { requestModelId: e.requestName.trim(), paradigm: e.paradigm };
+}
+
+/** 按模型选择器当前项（`auto` 或某条目 id）解析思考强度；无记录时默认为 medium。 */
+export function resolveThinkingLevelForSelection(settings: ShellSettings, selectionId: string): ThinkingLevel {
+	const trimmed = String(selectionId ?? '').trim();
+	const key = trimmed === '' || trimmed.toLowerCase() === 'auto' ? 'auto' : trimmed;
+	const raw = settings.models?.thinkingByModelId?.[key];
+	return normalizeThinkingLevel(raw != null ? String(raw) : 'medium');
 }

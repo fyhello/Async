@@ -136,6 +136,12 @@ export const messagesEn: Record<string, string> = {
 	'thinking.effort.medium': 'Medium',
 	'thinking.effort.high': 'High',
 	'thinking.effort.max': 'Max',
+	'thinking.badgeTitle': 'Thinking level for this picker item only (Auto or each model)',
+	'thinking.badge.off': 'Off',
+	'thinking.badge.low': 'Low',
+	'thinking.badge.medium': 'Med',
+	'thinking.badge.high': 'High',
+	'thinking.badge.max': 'Max',
 
 	'git.badge.new': 'New',
 	'git.badge.modified': 'Modified',

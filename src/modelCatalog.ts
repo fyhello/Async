@@ -1,7 +1,5 @@
 import type { ModelRequestParadigm } from './llmProvider';
 
-export type SpeedTag = 'Fast' | 'Medium' | 'High';
-
 export const AUTO_MODEL_ID = 'auto';
 
 /** 与主进程 `UserModelEntry` 对齐 */

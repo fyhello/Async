@@ -4391,7 +4391,7 @@ body {
 
 .ref-model-dd-row {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+	grid-template-columns: auto minmax(0, 1fr) auto auto;
 	align-items: center;
 	gap: 8px 10px;
 	width: 100%;
@@ -4425,6 +4425,14 @@ body {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
+	min-width: 0;
+}
+
+.ref-model-dd-title-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
 	min-width: 0;
 }
 
@@ -4468,6 +4476,35 @@ body {
 .ref-model-dd-tag--high {
 	background: rgba(129, 140, 248, 0.18);
 	color: #c4b5fd;
+}
+
+.ref-model-dd-tag--think {
+	text-transform: none;
+}
+
+.ref-model-dd-tag--think-off {
+	background: rgba(148, 163, 184, 0.14);
+	color: var(--void-fg-3);
+}
+
+.ref-model-dd-tag--think-low {
+	background: rgba(34, 197, 94, 0.15);
+	color: #86efac;
+}
+
+.ref-model-dd-tag--think-medium {
+	background: rgba(234, 179, 8, 0.12);
+	color: #fde047;
+}
+
+.ref-model-dd-tag--think-high {
+	background: rgba(129, 140, 248, 0.18);
+	color: #c4b5fd;
+}
+
+.ref-model-dd-tag--think-max {
+	background: rgba(244, 63, 94, 0.16);
+	color: #fda4af;
 }
 
 .ref-model-dd-check,

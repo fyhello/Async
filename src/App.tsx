@@ -18,7 +18,7 @@ import { WorkspaceExplorer, type GitPathStatusMap } from './WorkspaceExplorer';
 import {
 	type AgentPendingPatch,
 	type ChatStreamPayload,
-	coerceThinkingLevel,
+	coerceThinkingByModelId,
 	type ThinkingLevel,
 } from './ipcTypes';
 import { AgentStreamingToolPreview } from './AgentStreamingToolPreview';
@@ -477,7 +477,7 @@ export default function App() {
 	const [anthropicBaseURL, setAnthropicBaseURL] = useState('');
 	const [geminiApiKey, setGeminiApiKey] = useState('');
 	const [defaultModel, setDefaultModel] = useState(AUTO_MODEL_ID);
-	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('off');
+	const [thinkingByModelId, setThinkingByModelId] = useState<Record<string, ThinkingLevel>>({});
 	const [streamingThinking, setStreamingThinking] = useState('');
 	const [streamingToolPreview, setStreamingToolPreview] = useState<{
 		name: string;
@@ -744,7 +744,11 @@ export default function App() {
 					anthropic?: { apiKey?: string; baseURL?: string };
 					gemini?: { apiKey?: string };
 					defaultModel?: string;
-					models?: { entries?: UserModelEntry[]; enabledIds?: string[] };
+					models?: {
+						entries?: UserModelEntry[];
+						enabledIds?: string[];
+						thinkingByModelId?: Record<string, unknown>;
+					};
 					agent?: AgentCustomization;
 					ui?: { sidebarLayout?: { left?: unknown; right?: unknown } };
 				};
@@ -780,7 +784,7 @@ export default function App() {
 				const saneEnabled = sanitizeEnabledIds(rawEntries, st.models?.enabledIds);
 				setEnabledModelIds(saneEnabled);
 				setDefaultModel(coerceDefaultModel(st.defaultModel, rawEntries, saneEnabled));
-				setThinkingLevel(coerceThinkingLevel((st as { thinkingLevel?: unknown }).thinkingLevel));
+				setThinkingByModelId(coerceThinkingByModelId(st.models?.thinkingByModelId));
 				const ag = st.agent;
 				setAgentCustomization({
 					...defaultAgentCustomization(),
@@ -1266,7 +1270,7 @@ export default function App() {
 				apiKey: geminiApiKey || undefined,
 			},
 			defaultModel,
-			models: { entries: modelEntries, enabledIds: enabledModelIds },
+			models: { entries: modelEntries, enabledIds: enabledModelIds, thinkingByModelId },
 			agent: {
 				importThirdPartyConfigs: agentCustomization.importThirdPartyConfigs ?? false,
 				rules: agentCustomization.rules ?? [],
@@ -1286,6 +1290,7 @@ export default function App() {
 		defaultModel,
 		modelEntries,
 		enabledModelIds,
+		thinkingByModelId,
 		agentCustomization,
 		locale,
 	]);
@@ -1338,7 +1343,6 @@ export default function App() {
 			id: AUTO_MODEL_ID,
 			label: t('modelPicker.auto'),
 			description: t('modelPicker.autoDesc'),
-			speedTag: 'Fast',
 		};
 		const enabledSet = new Set(enabledModelIds);
 		const fromUser = modelEntries
@@ -1347,7 +1351,6 @@ export default function App() {
 				id: e.id,
 				label: e.displayName.trim() || e.requestName,
 				description: `${t(`settings.paradigm.${e.paradigm}`)} · ${e.requestName || t('modelPicker.requestNameMissing')}`,
-				speedTag: 'Medium' as const,
 			}));
 		return [auto, ...fromUser];
 	}, [enabledModelIds, modelEntries, t]);
@@ -2855,11 +2858,11 @@ export default function App() {
 				onSelectModel={(id) => void onPickDefaultModel(id)}
 				onNavigateToSettings={() => openSettingsPage('models')}
 				onAddModels={() => openSettingsPage('models')}
-				thinkingLevel={thinkingLevel}
-				onThinkingLevelChange={(v) => {
-					setThinkingLevel(v);
+				getThinkingLevel={(id) => thinkingByModelId[id] ?? 'medium'}
+				onThinkingLevelChange={(modelId, v) => {
+					setThinkingByModelId((prev) => ({ ...prev, [modelId]: v }));
 					if (shell) {
-						void shell.invoke('settings:set', { thinkingLevel: v });
+						void shell.invoke('settings:set', { models: { thinkingByModelId: { [modelId]: v } } });
 					}
 				}}
 			/>

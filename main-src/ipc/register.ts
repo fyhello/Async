@@ -23,7 +23,7 @@ import {
 } from '../threadStore.js';
 import * as gitService from '../gitService.js';
 import { parseComposerMode } from '../llm/composerMode.js';
-import { resolveChatModel } from '../llm/modelResolve.js';
+import { resolveChatModel, resolveThinkingLevelForSelection } from '../llm/modelResolve.js';
 import { streamChatUnified } from '../llm/llmRouter.js';
 import { buildWorkspaceTreeSummary } from '../llm/workspaceContextExpand.js';
 import {
@@ -34,7 +34,6 @@ import {
 	formatAgentApplyIncremental,
 } from '../agent/applyAgentDiffs.js';
 import { runAgentLoop } from '../agent/agentLoop.js';
-import { normalizeThinkingLevel } from '../llm/thinkingLevel.js';
 import { prepareUserTurnForChat } from '../llm/agentMessagePrep.js';
 import { summarizeThreadForSidebar, isTimestampToday } from '../threadListSummary.js';
 
@@ -61,7 +60,7 @@ function runChatStream(
 	void (async () => {
 		try {
 			const settings = getSettings();
-			const thinkingLevel = normalizeThinkingLevel(settings.thinkingLevel);
+			const thinkingLevel = resolveThinkingLevelForSelection(settings, modelSelection);
 			const resolved = resolveChatModel(settings, modelSelection);
 			if (!resolved) {
 				send({
