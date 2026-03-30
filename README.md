@@ -5,11 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>The Agent-Centric AI IDE Shell.</strong><br>
-  Built for developers who want a streamlined, autonomous agent workflow without the bloat.
+  <strong>Open-source AI IDE shell — same ballpark as Cursor: agent, editor, Git, terminal.</strong><br>
+  Built to deliver Cursor-like functionality under an open stack you control.
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/features-like%20Cursor-open%20source-818cf8" alt="Like Cursor, open source" />
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" />
   <img src="https://img.shields.io/badge/Electron-34-green" alt="Electron" />
   <img src="https://img.shields.io/badge/TypeScript-5.6-blue" alt="TypeScript" />
@@ -23,63 +24,78 @@
 
 ---
 
-## 🌟 What is Async Shell?
+## Cursor-class features, open source
 
-Async Shell is an open-source, AI-native desktop application designed to be the primary interface between you and your AI agents. Unlike standard IDE extensions, Async is built from the ground up to prioritize the **Agent Loop**, providing a unified environment for multi-model chat, autonomous tool execution, and code review.
+The goal is straightforward: **implement functionality in the same spirit as [Cursor](https://cursor.com)** — an AI-native IDE shell where the agent, Monaco editor, workspace tools, diff/review, and terminal fit together — **but ship it as open source** under **Apache 2.0**, with **bring-your-own** model keys and **local-first** threads and settings.
+
+| | **Cursor** (benchmark) | **Async Shell** |
+| --- | --- | --- |
+| **Delivery** | Product you use as-is | **Open source** — read, fork, self-host |
+| **API keys** | Product billing / integrations | **BYOK** — OpenAI, Anthropic, Gemini, OpenAI-compatible APIs |
+| **Sessions & data** | Vendor-hosted flows | **Local-first** — threads, settings, plans on your machine |
+| **Scope** | Full IDE + ecosystem | Focused **shell**: agent loop, Monaco, Git, terminal, Plan/Agent modes |
+
+---
+
+## What is Async Shell?
+
+Async Shell is an open-source, AI-native desktop application: the main surface between you and your agents. Unlike a bolt-on chat extension, Async is structured around the **Agent Loop** — multi-model chat, autonomous tool execution, and review in one workspace.
 
 ### Why use Async?
 
-- **Agent-First Workflow**: Not just a side-chat. The agent has first-class access to your workspace, tools, and terminal. It follows a robust **Autonomous Loop** (Think -> Plan -> Execute -> Observe).
-- **Extreme Transparency**: See the "brain" at work. Watch real-time **Streaming Tool Inputs** as the model generates JSON parameters, and review the **Tool Trajectory** with clear visual cards.
-- **Complete Control**: Self-hosted and privacy-conscious. Use your own API keys with OpenAI, Anthropic, or Gemini. Your code and conversations stay on your machine.
-- **Git-Native Experience**: Built-in Git service for status tracking, diff previews, and seamless integration between Agent changes and your repository state.
-- **Lightweight & Fast**: A high-performance desktop shell built with Electron and React, featuring a clean three-pane layout for maximum productivity.
+- **Agent-first workflow**: The agent reaches your workspace, tools, and terminal through a clear **Think → Plan → Execute → Observe** loop.
+- **Transparency**: **Streaming tool inputs** (JSON as it is generated) and **tool trajectory** cards for `read_file`, `write_to_file`, `str_replace`, `search_files`, and shell steps.
+- **Your keys, your machine**: Use your own providers; conversations and repo state stay local.
+- **Git-native**: Status, diffs, and agent-driven changes tied to your real repository.
+- **Lightweight shell**: Electron + React, **Agent** and **Editor** layouts, Monaco + embedded terminal — the same overall idea as Cursor, in a smaller open codebase.
 
-### 📸 Preview
+### Preview
 
 <p align="center">
   <img src="docs/assets/async-main-screenshot.png" width="1024" alt="Async Main Interface" />
 </p>
 
-### 📋 Plan mode
+### Plan mode
 
-In **Plan** mode, the model produces a structured plan (title, description, checklist, optional clarifying questions). You review the draft, adjust todos, then use **Start execution** (开始执行) to let the agent carry out the plan. Draft plans are saved under the app user-data directory (e.g. `.async/plans/`).
+In **Plan** mode, the model produces a structured plan (title, description, checklist, optional questions). You review the draft, adjust todos, then **Start execution** (开始执行) to run it. Drafts can live under the app user-data tree (e.g. `.async/plans/`).
 
 <p align="center">
   <img src="docs/assets/async-plan-mode.png" width="1024" alt="Async Plan mode — draft plan, task checklist, and Start execution" />
 </p>
 
-## ✨ Core Features
+---
 
-### 🤖 Autonomous Agent Loop
-- **Streaming Tool Input**: Watch the model "type" its tool parameters (JSON) in real-time. This provides immediate feedback on what the agent is planning to do.
-- **Tool Trajectory Visualization**: Live cards for `read_file`, `write_to_file`, `str_replace`, `search_files`, and shell commands.
-- **Plan vs. Agent Mode**: 
-  - **Plan Mode**: Model generates a structured Markdown plan with checklists and clarifying questions. You review and approve before execution.
-  - **Agent Mode**: Direct tool-execution loop for rapid iteration and autonomous task completion.
-- **Smart Context**: Automatic file-line positioning and highlighted ranges when the agent modifies code.
+## Core features
 
-### 🧠 Multi-Model Intelligence
-- **Native Adapters**: Optimized request paths for **Anthropic** (with Extended Thinking support), **OpenAI**, and **Gemini**.
-- **Model Agnostic**: Any OpenAI-compatible API (Local LLMs via Ollama/vLLM, or aggregators) works out-of-the-box.
-- **Thinking Support**: Built-in support for reasoning models (Claude 3.7 Thinking, o1-series) with dedicated streaming thinking blocks.
+### Autonomous agent loop
 
-### 🛠️ Professional Developer Experience
-- **Monaco Editor Integration**: Full-featured code editor with syntax highlighting, diff views, and multi-file management.
-- **Git-Aware Workflow**: Integrated Git service handles status, diffs, staging, commits, and pushes directly from the UI.
-- **Integrated xterm.js Terminal**: A dedicated terminal pane for running commands and observing agent-driven shell actions.
-- **Rich Composer**: Support for **@-mentions** to reference files, multi-segment user messages, and persistent thread management.
+- Streaming tool parameters and live **trajectory** cards.
+- **Plan** vs **Agent** mode: approve structured plans or run direct tool loops.
+- Smart editor context: file/line focus when the agent edits code.
 
-## 🏗️ Technical Architecture
+### Multi-model
 
-Async Shell is engineered for stability, security, and performance:
+- Adapters for **Anthropic** (incl. extended thinking), **OpenAI**, **Gemini**.
+- OpenAI-compatible APIs (Ollama, vLLM, aggregators).
+- Streaming “thinking” blocks for reasoning-oriented models.
 
-- **Main/Renderer Separation**: Clean IPC (Inter-Process Communication) architecture using Electron's `contextBridge` and `ipcMain`.
-- **Stream-Centric Engine**: A custom `agentLoop.ts` handles the multi-round tool calling logic, supporting partial JSON parsing for real-time streaming.
-- **Local-First Persistence**: Thread history, settings, and plans are stored locally as JSON/Markdown files in the user's data directory. No cloud sync required.
-- **Git Service Layer**: A dedicated Node.js service for porcelain Git operations, ensuring the UI stays in sync with your local repository state.
+### Developer experience
 
-## 🏗️ Project Structure
+- **Monaco** editor, tabs, diff-oriented review flows.
+- **Git** service: status, diffs, staging, commit/push from the UI.
+- **xterm.js** terminal for you and for observing agent shell use.
+- **Composer** with **@** file mentions, rich segments, persistent threads.
+
+---
+
+## Technical architecture
+
+- **Main / renderer IPC** via Electron `contextBridge` and `ipcMain`.
+- **`agentLoop.ts`**: multi-round tools, partial JSON streaming.
+- **Local persistence**: threads, settings, plans as JSON/Markdown under user data.
+- **`gitService`**: porcelain Git aligned with the UI.
+
+## Project structure
 
 ```text
 async-shell/
@@ -104,45 +120,48 @@ async-shell/
 └── package.json
 ```
 
-## 💾 Persistence (local)
+## Persistence (local)
 
-With default paths, app data lives under Electron **`userData`**:
+Default layout under Electron **`userData`**:
 
-- **`userData/async/threads.json`** — thread list and message history.
-- **`userData/async/settings.json`** — models, keys (stored locally), layout, agent options.
-- **`userData/.async/plans/`** — saved Plan documents (Markdown) when Plan mode writes a file.
+- **`userData/async/threads.json`** — threads and messages.
+- **`userData/async/settings.json`** — models, keys (local), layout, agent options.
+- **`userData/.async/plans/`** — saved Plan documents (Markdown).
 
-The renderer may use **localStorage** for small UI flags (e.g. agent file-change strip dismiss state); the source of truth for conversations is **`threads.json`**.
+The renderer may use **localStorage** for small UI flags; **`threads.json`** is the source of truth for conversations.
 
-## 🚀 Getting Started
+## Getting started
 
 ### Prerequisites
+
 - **Node.js** ≥ 18  
 - **npm** ≥ 9  
-- **Git** (optional but recommended for built-in Git features)
+- **Git** (optional but recommended)
 
-### Installation & Run
+### Install and run
 
-1. **Clone the repository**:
+1. **Clone** (replace with your fork or upstream URL):
+
    ```bash
    git clone https://github.com/your-org/async-shell.git
    cd async-shell
    ```
 
-2. **Install dependencies**:
+2. **Install**:
+
    ```bash
    npm install
    ```
 
-3. **Launch the app**:
+3. **Desktop build + Electron**:
+
    ```bash
    npm run desktop
    ```
-   Builds the main bundle and renderer (`dist/`), then starts Electron loading `dist/index.html`.
 
-### Development Mode
+   Builds main + renderer (`dist/`), then opens Electron on `dist/index.html`.
 
-Hot reload for the renderer and watch rebuild for the main process:
+### Development
 
 ```bash
 npm run dev
@@ -154,11 +173,13 @@ Optional DevTools:
 npm run dev:debug
 ```
 
-## 🗺️ Roadmap
-- [ ] **Full PTY terminal** (e.g. `node-pty`) for richer shell sessions.
-- [ ] **LSP integration** for jump-to-definition and diagnostics in-editor.
-- [ ] **Plugin system** for custom tools and agent extensions.
-- [ ] **Enhanced context** — RAG or indexing for very large workspaces.
+## Roadmap
 
-## 📜 License
-This project is licensed under the [Apache License 2.0](./LICENSE).
+- [ ] Full **PTY** terminal (e.g. `node-pty`).
+- [ ] **LSP** in-editor (go-to-definition, diagnostics).
+- [ ] **Plugin / tool** extensibility.
+- [ ] **Larger-workspace context** (indexing / RAG-style retrieval).
+
+## License
+
+Licensed under the [Apache License 2.0](./LICENSE).

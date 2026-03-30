@@ -1086,7 +1086,7 @@ export default function App() {
 	}, [shell, workspace]);
 
 	useEffect(() => {
-		if (!shell || workspace || layoutMode !== 'editor') {
+		if (!shell || workspace) {
 			setHomeRecents([]);
 			return;
 		}
@@ -1106,7 +1106,7 @@ export default function App() {
 		return () => {
 			cancelled = true;
 		};
-	}, [shell, workspace, layoutMode]);
+	}, [shell, workspace]);
 
 	useEffect(() => {
 		if (!shell || gitChangedPaths.length === 0) {
@@ -2796,7 +2796,8 @@ export default function App() {
 		);
 	};
 
-	const isEditorHomeMode = layoutMode === 'editor' && !workspace;
+	/** 未打开工作区时：Agent / Editor 均显示同一套欢迎页（打开项目、最近项目等） */
+	const isEditorHomeMode = !workspace;
 
 	return (
 		<div className="ref-shell">
