@@ -113,8 +113,10 @@ function ActivityRow({
 	const readLink = item.agentReadLink;
 	return (
 		<div className={`ref-activity-group-row ref-activity-group-row--${item.status}`}>
-			<span className="ref-activity-group-row-dot" aria-hidden />
-			<div className="ref-activity-group-row-content">
+			<div className="ref-activity-group-row-top">
+				<span className="ref-activity-group-row-dot-wrap" aria-hidden>
+					<span className="ref-activity-group-row-dot" />
+				</span>
 				<div className="ref-activity-group-row-main">
 					{readLink && onOpenFile ? (
 						<button
@@ -131,18 +133,22 @@ function ActivityRow({
 						<span className="ref-agent-activity-summary">{item.summary}</span>
 					) : null}
 				</div>
-				{item.detail ? (
-					<pre className="ref-agent-activity-detail">{item.detail}</pre>
-				) : null}
-				{item.resultLines && item.resultLines.length > 0 && item.resultKind ? (
-					<AgentResultCard
-						lines={item.resultLines}
-						kind={item.resultKind}
-						readSourcePath={item.agentReadLink?.path}
-						onOpenFile={onOpenFile}
-					/>
-				) : null}
 			</div>
+			{item.detail || (item.resultLines && item.resultLines.length > 0 && item.resultKind) ? (
+				<div className="ref-activity-group-row-rest">
+					{item.detail ? (
+						<pre className="ref-agent-activity-detail">{item.detail}</pre>
+					) : null}
+					{item.resultLines && item.resultLines.length > 0 && item.resultKind ? (
+						<AgentResultCard
+							lines={item.resultLines}
+							kind={item.resultKind}
+							readSourcePath={item.agentReadLink?.path}
+							onOpenFile={onOpenFile}
+						/>
+					) : null}
+				</div>
+			) : null}
 		</div>
 	);
 }

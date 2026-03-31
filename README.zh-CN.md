@@ -62,22 +62,29 @@ npm run readme:screenshots
 
 若要用真实界面截图，可直接替换 `docs/assets/` 里对应的 `.png` 文件。
 
-### Editor 模式
+### Editor 布局
 
 <p align="center">
-  <img src="docs/assets/async-editor-screenshot.png" width="1024" alt="Async Editor 模式" />
+  <img src="docs/assets/workspace_1.png" width="1024" alt="Async Editor 模式" />
 </p>
 
-### Agent 模式
+### Agent 布局
 
 <p align="center">
-  <img src="docs/assets/async-agent-screenshot.png" width="1024" alt="Async Agent 模式" />
+  <img src="docs/assets/workspace_2.png" width="2880" alt="Async Editor 模式" />
 </p>
+
+### Plan 模式
+
+<p align="center">
+  <img src="docs/assets/workspace_3.png" width="2072" alt="Async Editor 模式" />
+</p>
+
 
 ### 模型设置
 
 <p align="center">
-  <img src="docs/assets/async-model-settings.png" width="720" alt="Async 模型设置" />
+  <img src="docs/assets/setting_1.png" width="720" alt="Async 模型设置" />
 </p>
 
 ---

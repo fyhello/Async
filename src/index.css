@@ -2655,11 +2655,11 @@ body {
 	max-height: 260px;
 }
 
-/* 每一行 activity */
+/* 每一行 activity：圆点与首行文字垂直居中（1lh 包裹层） */
 .ref-activity-group-row {
 	display: flex;
-	align-items: flex-start;
-	gap: 8px;
+	flex-direction: column;
+	gap: 3px;
 	padding: 2px 10px 2px 12px;
 	font-size: 12px;
 	line-height: 1.6;
@@ -2667,9 +2667,25 @@ body {
 	animation: ref-seg-enter 0.22s ease-out both;
 }
 
-.ref-activity-group-row-dot {
+.ref-activity-group-row-top {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	min-width: 0;
+}
+
+/* 高度为一行，圆点在行盒内垂直居中，与左侧文字首行对齐 */
+.ref-activity-group-row-dot-wrap {
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	flex-shrink: 0;
-	margin-top: 7px;
+	align-self: flex-start;
+	height: 1lh;
+	min-height: calc(1em * 1.6);
+}
+
+.ref-activity-group-row-dot {
 	width: 5px;
 	height: 5px;
 	border-radius: 999px;
@@ -2695,19 +2711,22 @@ body {
 	animation: ref-agent-activity-pulse 1.6s ease-in-out infinite;
 }
 
-.ref-activity-group-row-content {
+.ref-activity-group-row-main {
 	flex: 1;
 	min-width: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 3px;
-}
-
-.ref-activity-group-row-main {
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	flex-wrap: wrap;
+}
+
+/* detail / 结果卡片：与首列文字左缘对齐（与原先 row-content 内一致） */
+.ref-activity-group-row-rest {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding-left: 13px;
+	min-width: 0;
 }
 
 /* ─── AgentResultCard：search_files / read_file / list_dir 成功结果折叠卡片 ─── */

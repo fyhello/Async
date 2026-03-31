@@ -60,22 +60,30 @@ README uses **PNG** because GitHub often blocks or fails to load **SVG** inside 
 npm run readme:screenshots
 ```
 
-### Editor Mode
+To use real UI screenshots, replace the corresponding `.png` files under `docs/assets/`.
+
+### Editor layout
 
 <p align="center">
-  <img src="docs/assets/async-editor-screenshot.png" width="1024" alt="Async Editor Mode" />
+  <img src="docs/assets/workspace_1.png" width="1024" alt="Async Editor layout" />
 </p>
 
-### Agent Mode
+### Agent layout
 
 <p align="center">
-  <img src="docs/assets/async-agent-screenshot.png" width="1024" alt="Async Agent Mode" />
+  <img src="docs/assets/workspace_2.png" width="2880" alt="Async Agent layout" />
+</p>
+
+### Plan mode
+
+<p align="center">
+  <img src="docs/assets/workspace_3.png" width="2072" alt="Async Plan mode" />
 </p>
 
 ### Model Settings
 
 <p align="center">
-  <img src="docs/assets/async-model-settings.png" width="720" alt="Async Model Settings" />
+  <img src="docs/assets/setting_1.png" width="720" alt="Async Model Settings" />
 </p>
 
 ---
