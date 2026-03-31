@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import { AgentCommandCard } from './AgentCommandCard';
 import { AgentDiffCard } from './AgentDiffCard';
 import { AgentEditCard } from './AgentEditCard';
+import { AgentResultCard } from './AgentResultCard';
 import {
 	buildStreamingToolSegments,
 	segmentAssistantContent,
@@ -126,6 +127,13 @@ export function ChatMarkdown({
 								</div>
 								{seg.detail ? (
 									<pre className="ref-agent-activity-detail">{seg.detail}</pre>
+								) : null}
+								{seg.resultLines && seg.resultLines.length > 0 && seg.resultKind ? (
+									<AgentResultCard
+										lines={seg.resultLines}
+										kind={seg.resultKind}
+										onOpenFile={onOpenAgentFile}
+									/>
 								) : null}
 							</div>
 						);

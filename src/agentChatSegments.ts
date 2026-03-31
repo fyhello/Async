@@ -35,6 +35,18 @@ export type AgentReadFileLink = {
 	endLine: number;
 };
 
+/** search_files / read_file / list_dir 成功后可折叠展示的结果行 */
+export type ActivityResultLine = {
+	/** 原始文本行 */
+	text: string;
+	/** 可选：文件路径（search_files 每行格式 path:line:content） */
+	filePath?: string;
+	/** 可选：行号（search_files） */
+	lineNo?: number;
+	/** 可选：匹配内容（search_files） */
+	matchText?: string;
+};
+
 export type ActivitySegment = {
 	type: 'activity';
 	text: string;
@@ -43,6 +55,10 @@ export type ActivitySegment = {
 	summary?: string;
 	/** 仅 read_file：可点击跳转 Monaco 并高亮 */
 	agentReadLink?: AgentReadFileLink;
+	/** search_files / read_file / list_dir 成功结果行，用于可折叠内联展示 */
+	resultLines?: ActivityResultLine[];
+	/** resultLines 对应的工具名，用于选择渲染样式 */
+	resultKind?: 'search' | 'read' | 'dir';
 };
 
 export type ToolCallSegment = {
@@ -513,6 +529,50 @@ function extractResultSummary(name: string, result: string | undefined, t: TFunc
 	}
 }
 
+/** 解析 search_files 结果行：格式为 "path:lineNo:content" */
+function parseSearchResultLines(result: string): ActivityResultLine[] {
+	if (!result || result === 'No matches found.') return [];
+	return result
+		.split('\n')
+		.filter((l) => l.trim())
+		.map((line) => {
+			// rg 输出格式：path:lineNo:content（路径可能含冒号，lineNo 是纯数字）
+			const m = line.match(/^(.+?):(\d+):(.*)$/);
+			if (m) {
+				return {
+					text: line,
+					filePath: m[1],
+					lineNo: parseInt(m[2]!, 10),
+					matchText: m[3],
+				};
+			}
+			return { text: line };
+		});
+}
+
+/** 解析 read_file 结果行：格式为 "  123|content" */
+function parseReadFileResultLines(result: string): ActivityResultLine[] {
+	if (!result) return [];
+	return result
+		.split('\n')
+		.map((line) => {
+			const m = line.match(/^\s*(\d+)\|(.*)$/);
+			if (m) {
+				return { text: line, lineNo: parseInt(m[1]!, 10), matchText: m[2] };
+			}
+			return { text: line };
+		});
+}
+
+/** 解析 list_dir 结果行 */
+function parseDirResultLines(result: string): ActivityResultLine[] {
+	if (!result || result === '(empty directory)') return [];
+	return result
+		.split('\n')
+		.filter((l) => l.trim())
+		.map((line) => ({ text: line }));
+}
+
 function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment {
 	const inProgress = mk.result === undefined;
 	const failed = mk.success === false;
@@ -529,6 +589,10 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 		case 'read_file': {
 			const p = getPath();
 			const agentReadLink = computeReadFileAgentLink(mk, p, inProgress);
+			const resultLines =
+				!inProgress && !failed && mk.result
+					? parseReadFileResultLines(mk.result)
+					: undefined;
 			return {
 				type: 'activity',
 				text: readFileActivityLabel(t, p, agentReadLink, inProgress, failed),
@@ -536,6 +600,8 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 				detail,
 				summary,
 				agentReadLink,
+				resultLines,
+				resultKind: resultLines ? 'read' : undefined,
 			};
 		}
 		case 'write_to_file': {
@@ -571,16 +637,26 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 		}
 		case 'list_dir': {
 			const p = getPath() || '.';
+			const resultLines =
+				!inProgress && !failed && mk.result
+					? parseDirResultLines(mk.result)
+					: undefined;
 			return {
 				type: 'activity',
 				text: inProgress ? t('agent.activity.listing', { path: p }) : t('agent.activity.listed', { path: p }),
 				status: inProgress ? 'pending' : 'success',
 				detail,
 				summary,
+				resultLines,
+				resultKind: resultLines ? 'dir' : undefined,
 			};
 		}
 		case 'search_files': {
 			const pat = getPath('pattern');
+			const resultLines =
+				!inProgress && !failed && mk.result && mk.result !== 'No matches found.'
+					? parseSearchResultLines(mk.result)
+					: undefined;
 			return {
 				type: 'activity',
 				text: inProgress
@@ -589,6 +665,8 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 				status: inProgress ? 'pending' : 'success',
 				detail,
 				summary,
+				resultLines,
+				resultKind: resultLines ? 'search' : undefined,
 			};
 		}
 		case 'execute_command': {

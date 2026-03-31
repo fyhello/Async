@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FileTypeIcon } from './fileTypeIcons';
 import type { FileEditSegment } from './agentChatSegments';
 import { useI18n } from './i18n';
+import { sliceAgentEditPreviewLines } from './pretextLayout';
 
 type Props = {
 	edit: FileEditSegment;
@@ -18,7 +19,7 @@ type PreviewLine = {
 	text: string;
 };
 
-const COLLAPSED_PREVIEW_LINES = 8;
+const EDIT_PREVIEW_MAX_BODY_PX = 220;
 
 function buildPreviewLines(edit: FileEditSegment): PreviewLine[] {
 	const lines: PreviewLine[] = [];
@@ -40,15 +41,46 @@ export function AgentEditCard({ edit, onOpenFile }: Props) {
 	const name = basename(edit.path) || t('agent.review.unknownPath');
 	const previewLines = useMemo(() => buildPreviewLines(edit), [edit]);
 	const [expanded, setExpanded] = useState(false);
-	const canExpand = !edit.isStreaming && previewLines.length > COLLAPSED_PREVIEW_LINES;
-	// While streaming: show the latest lines (tail) so the user sees new code as it arrives.
-	// After streaming: show the first lines with an expand toggle.
+	const previewMeasureRef = useRef<HTMLDivElement>(null);
+	const [previewInnerWidth, setPreviewInnerWidth] = useState(320);
+
+	useLayoutEffect(() => {
+		const el = previewMeasureRef.current;
+		if (!el) {
+			return;
+		}
+		const apply = (w: number) => {
+			if (w > 0) {
+				setPreviewInnerWidth(w);
+			}
+		};
+		apply(el.getBoundingClientRect().width);
+		const ro = new ResizeObserver((entries) => {
+			const w = entries[0]?.contentRect.width ?? 0;
+			apply(w);
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
+
+	const collapsedHead = useMemo(
+		() => sliceAgentEditPreviewLines(previewLines, previewInnerWidth, EDIT_PREVIEW_MAX_BODY_PX, 'head'),
+		[previewLines, previewInnerWidth]
+	);
+	const collapsedTail = useMemo(
+		() => sliceAgentEditPreviewLines(previewLines, previewInnerWidth, EDIT_PREVIEW_MAX_BODY_PX, 'tail'),
+		[previewLines, previewInnerWidth]
+	);
+
+	const canExpand = !edit.isStreaming && previewLines.length > collapsedHead.length;
+	// 流式：按像素预算展示尾部若干行；完成后：折叠态展示头部，展开后全文。
 	const visibleLines = edit.isStreaming
-		? previewLines.slice(-COLLAPSED_PREVIEW_LINES)
+		? collapsedTail
 		: expanded
 			? previewLines
-			: previewLines.slice(0, COLLAPSED_PREVIEW_LINES);
+			: collapsedHead;
 	const canOpenFile = edit.path.trim().length > 0;
+	const expandRemainingLines = Math.max(0, previewLines.length - collapsedHead.length);
 
 	return (
 		<div className={`ref-edit-card ${edit.isStreaming ? 'ref-edit-card--streaming' : ''}`}>
@@ -87,7 +119,7 @@ export function AgentEditCard({ edit, onOpenFile }: Props) {
 			</button>
 			{previewLines.length > 0 ? (
 				<div className="ref-edit-card-preview-wrap">
-					<div className="ref-edit-card-preview">
+					<div ref={previewMeasureRef} className="ref-edit-card-preview">
 						{visibleLines.map((line, idx) => (
 							<div
 								key={`${line.kind}-${idx}`}
@@ -123,7 +155,7 @@ export function AgentEditCard({ edit, onOpenFile }: Props) {
 							<span>
 								{expanded
 									? t('agent.edit.collapse')
-									: t('agent.edit.expand', { lines: previewLines.length })}
+									: t('agent.edit.expand', { lines: expandRemainingLines })}
 							</span>
 						</button>
 					) : null}

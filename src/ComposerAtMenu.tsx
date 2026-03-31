@@ -4,6 +4,7 @@ import { computeClampedPopoverLayout, POPOVER_VIEW_MARGIN } from './anchorPopove
 import type { CaretRectSnapshot } from './caretRectSnapshot';
 import type { AtMenuItem } from './composerAtMention';
 import { FileTypeIcon } from './fileTypeIcons';
+import { estimateAtMenuContentHeightPx } from './pretextLayout';
 
 function IconBranch({ className }: { className?: string }) {
 	return (
@@ -116,7 +117,8 @@ export function ComposerAtMenu({ open, items, highlightIndex, caretRect, onHighl
 	const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
 	const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
 	const menuWidth = Math.min(340, vw - 2 * POPOVER_VIEW_MARGIN);
-	const estHeight = Math.min(Math.max(items.length, 1) * 56 + 16, vh * 0.45);
+	const pretexMenuBodyPx = estimateAtMenuContentHeightPx(items, menuWidth);
+	const estHeight = Math.min(Math.max(pretexMenuBodyPx, items.length ? 48 : 44), vh * 0.45);
 
 	// 使用统一的 popover 定位逻辑（自动处理上/下展开、视口边界裁剪）
 	const anchorRect = new DOMRect(caretRect.left, caretRect.top, caretRect.width, caretRect.height);

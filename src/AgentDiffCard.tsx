@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
 	countDiffAddDel,
 	diffPathToWorkspaceRel,
@@ -6,6 +6,7 @@ import {
 	firstHunkNewStartLine,
 } from './agentChatSegments';
 import { FileTypeIcon } from './fileTypeIcons';
+import { countAgentDiffLinesForPreviewPx } from './pretextLayout';
 
 function IconChevronDiff({ expanded, className }: { expanded: boolean; className?: string }) {
 	return (
@@ -45,8 +46,8 @@ function lineClassName(line: string): string {
 	return mod;
 }
 
-/** 折叠时最多展示的行数（Cursor 式预览，非全文） */
-const DIFF_PREVIEW_MAX_LINES = 10;
+/** 折叠预览区大致像素上限（长行折行后由 Pretext 按真实排版高度截断，替代固定行数） */
+const DIFF_PREVIEW_MAX_BODY_PX = 240;
 
 type Props = {
 	diff: string;
@@ -65,10 +66,38 @@ export function AgentDiffCard({ diff, workspaceRoot, onOpenFile }: Props) {
 	const lines = useMemo(() => diff.split('\n'), [diff]);
 	const [expanded, setExpanded] = useState(false);
 	const revealLine = firstHunkNewStartLine(diff);
+	const linesMeasureRef = useRef<HTMLDivElement>(null);
+	const [linesInnerWidth, setLinesInnerWidth] = useState(280);
 
-	const needsCollapse = lines.length > DIFF_PREVIEW_MAX_LINES;
-	const visibleLines = needsCollapse && !expanded ? lines.slice(0, DIFF_PREVIEW_MAX_LINES) : lines;
-	const hiddenCount = needsCollapse ? lines.length - DIFF_PREVIEW_MAX_LINES : 0;
+	useLayoutEffect(() => {
+		const el = linesMeasureRef.current;
+		if (!el) {
+			return;
+		}
+		const apply = (w: number) => {
+			if (w > 0) {
+				setLinesInnerWidth(w);
+			}
+		};
+		apply(el.getBoundingClientRect().width);
+		const ro = new ResizeObserver((entries) => {
+			const w = entries[0]?.contentRect.width ?? 0;
+			apply(w);
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
+
+	const previewLineCount = useMemo(() => {
+		if (expanded) {
+			return lines.length;
+		}
+		return countAgentDiffLinesForPreviewPx(lines, linesInnerWidth, DIFF_PREVIEW_MAX_BODY_PX);
+	}, [lines, linesInnerWidth, expanded]);
+
+	const needsCollapse = previewLineCount < lines.length;
+	const visibleLines = expanded ? lines : lines.slice(0, previewLineCount);
+	const hiddenCount = needsCollapse ? lines.length - previewLineCount : 0;
 
 	const canOpen = Boolean(onOpenFile && openTarget);
 
@@ -123,7 +152,7 @@ export function AgentDiffCard({ diff, workspaceRoot, onOpenFile }: Props) {
 					needsCollapse && !expanded ? 'ref-agent-diff-card-body--preview' : 'ref-agent-diff-card-body--expanded',
 				].join(' ')}
 			>
-				<div className="ref-agent-diff-lines" role="region" aria-label="Unified diff">
+				<div ref={linesMeasureRef} className="ref-agent-diff-lines" role="region" aria-label="Unified diff">
 					{visibleLines.map((line, i) => (
 						<div key={i} className={lineClassName(line)}>
 							{line || '\u00a0'}
