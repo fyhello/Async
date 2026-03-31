@@ -12,16 +12,38 @@ import type { ChatMessage } from '../threadStore.js';
 import type { ShellSettings } from '../settingsStore.js';
 import type { StreamHandlers, UnifiedChatOptions } from '../llm/types.js';
 import { streamChatUnified } from '../llm/llmRouter.js';
-import { resolveModel } from '../llm/modelResolve.js';
 
-/** 触发压缩的字符数阈值（约 20k tokens 粗估） */
-const COMPRESS_CHAR_THRESHOLD = 80_000;
+/** 触发压缩的 token 估算阈值（字符数 / 4 粗估） */
+const COMPRESS_TOKEN_THRESHOLD = 20_000;
 
 /** 压缩后保留的最近完整轮数（user+assistant 各算一条） */
 const KEEP_RECENT_TURNS = 8;
 
-function estimateChars(messages: ChatMessage[]): number {
-	return messages.reduce((s, m) => s + m.content.length, 0);
+/** 发送给 LLM 前每条工具结果内容的最大字符数 */
+const MAX_TOOL_RESULT_CHARS = 8_000;
+
+function estimateTokens(messages: ChatMessage[]): number {
+	return Math.ceil(messages.reduce((s, m) => s + m.content.length, 0) / 4);
+}
+
+/**
+ * 对消息列表中的 tool_result 标记块做字符截断预算，
+ * 避免单条大输出（如命令输出、搜索结果）撑爆 context 窗口。
+ */
+function budgetToolResults(messages: ChatMessage[], maxChars = MAX_TOOL_RESULT_CHARS): ChatMessage[] {
+	return messages.map((m) => {
+		if (!m.content.includes('<tool_result')) return m;
+		// 替换每个 <tool_result ...>...</tool_result> 块中超长的内容
+		const truncated = m.content.replace(
+			/(<tool_result[^>]*>)([\s\S]*?)(<\/tool\u200c?_result>)/g,
+			(_match, open: string, body: string, close: string) => {
+				if (body.length <= maxChars) return open + body + close;
+				return open + body.slice(0, maxChars) + '\n... (truncated for context budget)' + close;
+			}
+		);
+		if (truncated === m.content) return m;
+		return { ...m, content: truncated };
+	});
 }
 
 /** 从 non-system 消息中提取最近 N 条（保留完整的 user/assistant 对）。 */
@@ -94,8 +116,8 @@ export async function compressForSend(
 	const systemMsg = messages.find((m) => m.role === 'system');
 	const nonSystem = messages.filter((m) => m.role !== 'system');
 
-	if (estimateChars(nonSystem) < COMPRESS_CHAR_THRESHOLD) {
-		return { messages };
+	if (estimateTokens(nonSystem) < COMPRESS_TOKEN_THRESHOLD) {
+		return { messages: budgetToolResults(messages) };
 	}
 
 	const { old: oldMessages, recent } = splitOldAndRecent(nonSystem, KEEP_RECENT_TURNS);
@@ -112,8 +134,14 @@ export async function compressForSend(
 			summary = await generateSummary(settings, oldMessages, options);
 			coversCount = oldMessages.length;
 		} catch {
-			// 摘要生成失败时降级为不压缩
-			return { messages };
+			// 摘要生成失败：降级为保留更多最近轮次，丢弃最旧消息（而非完全不压缩）
+			const { recent: fallbackRecent } = splitOldAndRecent(nonSystem, KEEP_RECENT_TURNS * 2);
+			return {
+				messages: budgetToolResults([
+					...(systemMsg ? [systemMsg] : []),
+					...fallbackRecent,
+				]),
+			};
 		}
 	}
 
@@ -122,11 +150,11 @@ export async function compressForSend(
 		content: `[Conversation summary — ${oldMessages.length} earlier messages compressed]\n\n${summary}`,
 	};
 
-	const compressed: ChatMessage[] = [
+	const compressed: ChatMessage[] = budgetToolResults([
 		...(systemMsg ? [systemMsg] : []),
 		summaryMessage,
 		...recent,
-	];
+	]);
 
 	return {
 		messages: compressed,

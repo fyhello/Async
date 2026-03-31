@@ -45,12 +45,15 @@ export type ShellIndexingSettings = {
 	semanticIndexEnabled?: boolean;
 	/** TypeScript/JavaScript 语言服务（跳转定义等） */
 	tsLspEnabled?: boolean;
+	/** 在 Agent/Plan/Debug 对话中注入当前 git 分支、状态和最近提交摘要 */
+	gitContextEnabled?: boolean;
 };
 
 const INDEXING_DEFAULTS: Required<ShellIndexingSettings> = {
 	symbolIndexEnabled: true,
 	semanticIndexEnabled: true,
 	tsLspEnabled: true,
+	gitContextEnabled: true,
 };
 
 export type ShellSettings = {

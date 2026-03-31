@@ -26,8 +26,8 @@ export type ToolResult = {
 	isError: boolean;
 };
 
-/** 与 Cline Plan 模式一致：仅允许探索，不写入、不跑 shell */
-export const READ_ONLY_AGENT_TOOL_NAMES = ['read_file', 'list_dir', 'search_files'] as const;
+/** 只读工具：可安全并发执行，不修改文件系统或运行副作用命令 */
+export const READ_ONLY_AGENT_TOOL_NAMES = ['read_file', 'list_dir', 'search_files', 'get_diagnostics'] as const;
 
 export function isReadOnlyAgentTool(name: string): boolean {
 	return (READ_ONLY_AGENT_TOOL_NAMES as readonly string[]).includes(name);

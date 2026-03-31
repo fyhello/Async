@@ -1,5 +1,10 @@
 /**
  * Agent 工具执行前用户确认（主进程侧逻辑与「安全命令」白名单）。
+ *
+ * P3.12 预留：当前实现为硬编码的按工具名分支判断。
+ * 长期方向：将权限规则抽象为可配置的 ToolPermissionRule[]，支持 pattern 匹配、
+ * per-tool 规则、用户自定义，以及 shouldAvoidPermissionPrompts（后台自动拒绝）策略。
+ * 参考 Claude Code 的 ToolPermissionContext 设计。
  */
 
 import type { ToolCall } from './agentTools.js';

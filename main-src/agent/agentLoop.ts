@@ -140,6 +140,69 @@ export async function runAgentLoop(
 	}
 }
 
+// ─── Shared helpers ──────────────────────────────────────────────────────────
+
+/** 最大只读工具并发数，避免大批量 read_file 同时打盘 */
+const MAX_TOOL_CONCURRENCY = 10;
+
+/**
+ * 带并发上限的批量执行，保证结果顺序与输入一致。
+ */
+async function runBatchWithLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+	const results: T[] = new Array(tasks.length);
+	let nextIdx = 0;
+	async function worker(): Promise<void> {
+		while (nextIdx < tasks.length) {
+			const i = nextIdx++;
+			results[i] = await tasks[i]!();
+		}
+	}
+	const workerCount = Math.min(limit, tasks.length);
+	await Promise.all(Array.from({ length: workerCount }, worker));
+	return results;
+}
+
+/**
+ * 当 assistant 消息已写入 conversation 但工具执行被中断时，
+ * 为每个未收到 tool_result 的 tool_call 补充合成的失败结果，
+ * 避免下一轮 API 调用因 unmatched tool_use_id 报错。
+ */
+function synthesizeMissingOpenAIToolResults(
+	conversation: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+	turnToolCalls: { id: string; name: string; arguments: string }[],
+	reason: string
+): void {
+	const named = turnToolCalls.filter((tc) => tc.name && tc.id);
+	if (named.length === 0) return;
+	// 检查最后一条 assistant 消息是否已包含这些 tool_calls（才需要补全）
+	const last = conversation[conversation.length - 1];
+	if (!last || last.role !== 'assistant') return;
+	for (const tc of named) {
+		conversation.push({
+			role: 'tool',
+			tool_call_id: tc.id,
+			content: `Tool execution aborted: ${reason}`,
+		});
+	}
+}
+
+function synthesizeMissingAnthropicToolResults(
+	conversation: import('@anthropic-ai/sdk/resources/messages').MessageParam[],
+	turnToolUses: { id: string; name: string; input: string }[],
+	reason: string
+): void {
+	if (turnToolUses.length === 0) return;
+	const last = conversation[conversation.length - 1];
+	if (!last || last.role !== 'assistant') return;
+	const results: import('@anthropic-ai/sdk/resources/messages').ToolResultBlockParam[] = turnToolUses.map((tu) => ({
+		type: 'tool_result' as const,
+		tool_use_id: tu.id,
+		content: `Tool execution aborted: ${reason}`,
+		is_error: true,
+	}));
+	conversation.push({ role: 'user', content: results });
+}
+
 // ─── OpenAI-compatible agent loop ───────────────────────────────────────────
 
 type OAIMsg = OpenAI.Chat.Completions.ChatCompletionMessageParam;
@@ -194,6 +257,9 @@ async function runOpenAILoop(
 	const threshold = options.maxConsecutiveMistakes ?? DEFAULT_MAX_CONSECUTIVE_MISTAKES;
 	let consecutiveToolFailures = 0;
 
+	const MAX_OUTPUT_RECOVERY_LIMIT = 3;
+	let outputRecoveryCount = 0;
+
 	type TurnTc = { id: string; name: string; arguments: string };
 
 	async function handleMistakeLimitBeforeRound(): Promise<boolean> {
@@ -225,11 +291,15 @@ async function runOpenAILoop(
 	}
 
 	async function runOneOpenAITool(tc: TurnTc): Promise<OpenAI.Chat.ChatCompletionToolMessageParam> {
-		let args: Record<string, unknown> = {};
+		let args: Record<string, unknown>;
 		try {
 			args = JSON.parse(tc.arguments || '{}');
-		} catch {
-			/* use empty */
+		} catch (parseErr) {
+			const msg = `工具参数 JSON 无效：${parseErr instanceof Error ? parseErr.message : String(parseErr)}。请提供合法的 JSON。`;
+			if (mistakeLimitEnabled) consecutiveToolFailures++;
+			fullContent += toolResultMarker(tc.name, msg, false);
+			handlers.onToolResult(tc.name, msg, false);
+			return { role: 'tool', tool_call_id: tc.id, content: msg };
 		}
 
 		const toolCall: ToolCall = { id: tc.id, name: tc.name, arguments: args };
@@ -283,7 +353,10 @@ async function runOpenAILoop(
 					j++;
 				}
 				const batch = withNames.slice(i, j);
-				const outs = await Promise.all(batch.map((b) => runOneOpenAITool(b)));
+				const outs = await runBatchWithLimit(
+					batch.map((b) => () => runOneOpenAITool(b)),
+					MAX_TOOL_CONCURRENCY
+				);
 				for (const msg of outs) {
 					conversation.push(msg);
 				}
@@ -305,6 +378,7 @@ async function runOpenAILoop(
 
 		let turnText = '';
 		const turnToolCalls: TurnTc[] = [];
+		let turnFinishReason: string | null = null;
 
 		// 每轮创建独立 AbortController，叠加在外部 signal 之上，用于超时自动中止
 		const roundAc = new AbortController();
@@ -345,7 +419,14 @@ async function runOpenAILoop(
 					};
 				}
 
-				const delta = chunk.choices[0]?.delta;
+				const choice = chunk.choices[0];
+				if (!choice) continue;
+
+				if (choice.finish_reason) {
+					turnFinishReason = choice.finish_reason;
+				}
+
+				const delta = choice.delta;
 				if (!delta) continue;
 
 				if (delta.content) {
@@ -374,23 +455,46 @@ async function runOpenAILoop(
 		} catch (e: unknown) {
 			clearInterval(silenceTimer);
 			clearTimeout(hardTimer);
-			if (options.signal.aborted) break;
+			if (options.signal.aborted) {
+				synthesizeMissingOpenAIToolResults(conversation, turnToolCalls, '已中止生成');
+				break;
+			}
 			if (roundSignal.aborted && !options.signal.aborted) {
+				synthesizeMissingOpenAIToolResults(conversation, turnToolCalls, '连接超时');
 				handlers.onError('连接超时：LLM 响应过慢，已自动中止。请重试或检查网络。');
 				return;
 			}
+			synthesizeMissingOpenAIToolResults(conversation, turnToolCalls, e instanceof Error ? e.message : String(e));
 			handlers.onError(e instanceof Error ? e.message : String(e));
 			return;
 		}
 		clearInterval(silenceTimer);
 		clearTimeout(hardTimer);
 
-		if (options.signal.aborted || roundSignal.aborted) break;
+		if (options.signal.aborted || roundSignal.aborted) {
+			synthesizeMissingOpenAIToolResults(conversation, turnToolCalls, '已中止生成');
+			break;
+		}
 
 		turnText = unwrapAssistantContentEnvelope(turnText);
 		fullContent += turnText;
 
 		if (turnToolCalls.length === 0 || turnToolCalls.every((tc) => !tc.name)) {
+			// 检测 max_output_tokens 截断，尝试自动续写
+			if (
+				turnFinishReason === 'length' &&
+				outputRecoveryCount < MAX_OUTPUT_RECOVERY_LIMIT
+			) {
+				outputRecoveryCount++;
+				conversation.push({ role: 'assistant', content: turnText });
+				conversation.push({
+					role: 'user',
+					content:
+						'Output token limit hit. Resume directly — no apology, no recap of what you were doing. ' +
+						'Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.',
+				});
+				continue;
+			}
 			conversation.push({ role: 'assistant', content: turnText });
 			break;
 		}
@@ -465,6 +569,9 @@ async function runAnthropicLoop(
 	const threshold = options.maxConsecutiveMistakes ?? DEFAULT_MAX_CONSECUTIVE_MISTAKES;
 	let consecutiveToolFailures = 0;
 
+	const MAX_OUTPUT_RECOVERY_LIMIT_A = 3;
+	let outputRecoveryCountA = 0;
+
 	type TurnTu = { id: string; name: string; input: string };
 
 	async function handleMistakeLimitBeforeRoundAnthropic(): Promise<boolean> {
@@ -496,11 +603,15 @@ async function runAnthropicLoop(
 	}
 
 	async function runOneAnthropicTool(tu: TurnTu): Promise<ToolResultBlockParam> {
-		let args: Record<string, unknown> = {};
+		let args: Record<string, unknown>;
 		try {
 			args = JSON.parse(tu.input || '{}');
-		} catch {
-			/* use empty */
+		} catch (parseErr) {
+			const msg = `工具参数 JSON 无效：${parseErr instanceof Error ? parseErr.message : String(parseErr)}。请提供合法的 JSON。`;
+			if (mistakeLimitEnabled) consecutiveToolFailures++;
+			fullContent += toolResultMarker(tu.name, msg, false);
+			handlers.onToolResult(tu.name, msg, false);
+			return { type: 'tool_result', tool_use_id: tu.id, content: msg, is_error: true };
 		}
 
 		const toolCall: ToolCall = { id: tu.id, name: tu.name, arguments: args };
@@ -559,7 +670,10 @@ async function runAnthropicLoop(
 					j++;
 				}
 				const batch = turnToolUses.slice(i, j);
-				const batchResults = await Promise.all(batch.map((b) => runOneAnthropicTool(b)));
+				const batchResults = await runBatchWithLimit(
+					batch.map((b) => () => runOneAnthropicTool(b)),
+					MAX_TOOL_CONCURRENCY
+				);
 				out.push(...batchResults);
 				i = j;
 			} else {
@@ -583,6 +697,7 @@ async function runAnthropicLoop(
 		const turnToolUses: { id: string; name: string; input: string }[] = [];
 		let currentBlockType: 'text' | 'tool_use' | 'thinking' | null = null;
 		let currentBlockIdx = -1;
+		let turnStopReason: string | null = null;
 
 		const maxTokens = anthropicEffectiveMaxTokens(thinkBudget, options.maxOutputTokens);
 		const thinkingParam =
@@ -627,12 +742,15 @@ async function runAnthropicLoop(
 						cacheReadTokens: (accUsage?.cacheReadTokens ?? 0) + (((ev.message.usage as any).cache_read_input_tokens) ?? 0),
 						cacheWriteTokens: (accUsage?.cacheWriteTokens ?? 0) + (((ev.message.usage as any).cache_creation_input_tokens) ?? 0),
 					};
-				} else if (ev.type === 'message_delta' && ev.usage) {
-					accUsage = {
-						...(accUsage ?? {}),
-						outputTokens: (accUsage?.outputTokens ?? 0) + (ev.usage.output_tokens ?? 0),
-					};
-				} else if (ev.type === 'content_block_start') {
+			} else if (ev.type === 'message_delta' && ev.usage) {
+				accUsage = {
+					...(accUsage ?? {}),
+					outputTokens: (accUsage?.outputTokens ?? 0) + (ev.usage.output_tokens ?? 0),
+				};
+				if ((ev as any).delta?.stop_reason) {
+					turnStopReason = (ev as any).delta.stop_reason;
+				}
+			} else if (ev.type === 'content_block_start') {
 					if (ev.content_block.type === 'text') {
 						currentBlockType = 'text';
 					} else if (ev.content_block.type === 'tool_use') {
@@ -674,23 +792,46 @@ async function runAnthropicLoop(
 		} catch (e: unknown) {
 			clearInterval(silenceTimerA);
 			clearTimeout(hardTimerA);
-			if (options.signal.aborted) break;
+			if (options.signal.aborted) {
+				synthesizeMissingAnthropicToolResults(conversation, turnToolUses, '已中止生成');
+				break;
+			}
 			if (roundSignalA.aborted && !options.signal.aborted) {
+				synthesizeMissingAnthropicToolResults(conversation, turnToolUses, '连接超时');
 				handlers.onError('连接超时：LLM 响应过慢，已自动中止。请重试或检查网络。');
 				return;
 			}
+			synthesizeMissingAnthropicToolResults(conversation, turnToolUses, e instanceof Error ? e.message : String(e));
 			handlers.onError(e instanceof Error ? e.message : String(e));
 			return;
 		}
 		clearInterval(silenceTimerA);
 		clearTimeout(hardTimerA);
 
-		if (options.signal.aborted || roundSignalA.aborted) break;
+		if (options.signal.aborted || roundSignalA.aborted) {
+			synthesizeMissingAnthropicToolResults(conversation, turnToolUses, '已中止生成');
+			break;
+		}
 
 		turnText = unwrapAssistantContentEnvelope(turnText);
 		fullContent += turnText;
 
 		if (turnToolUses.length === 0) {
+			// 检测 max_tokens 截断，尝试自动续写
+			if (
+				turnStopReason === 'max_tokens' &&
+				outputRecoveryCountA < MAX_OUTPUT_RECOVERY_LIMIT_A
+			) {
+				outputRecoveryCountA++;
+				conversation.push({ role: 'assistant', content: turnText });
+				conversation.push({
+					role: 'user',
+					content:
+						'Output token limit hit. Resume directly — no apology, no recap of what you were doing. ' +
+						'Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.',
+				});
+				continue;
+			}
 			conversation.push({ role: 'assistant', content: turnText });
 			break;
 		}
@@ -708,7 +849,7 @@ async function runAnthropicLoop(
 		}
 		for (const tu of turnToolUses) {
 			let input: Record<string, unknown> = {};
-			try { input = JSON.parse(tu.input || '{}'); } catch { /* use empty */ }
+			try { input = JSON.parse(tu.input || '{}'); } catch { input = {}; }
 			assistantContent.push({ type: 'tool_use', id: tu.id, name: tu.name, input });
 		}
 		conversation.push({ role: 'assistant', content: assistantContent });

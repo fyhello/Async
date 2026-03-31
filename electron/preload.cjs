@@ -52,6 +52,11 @@ const INVOKE_CHANNELS = new Set([
 	'plan:save',
 	'plan:saveStructured',
 	'threads:getPlan',
+	'workspace:closeFolder',
+	'app:newWindow',
+	'app:quit',
+	'fs:pickOpenFile',
+	'fs:pickSaveFile',
 ]);
 
 const chatHandlers = new Map();

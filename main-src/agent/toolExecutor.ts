@@ -447,12 +447,13 @@ async function executeDelegateTask(call: ToolCall): Promise<ToolResult> {
 		const prevCtx = _delegateContext!;
 		setDelegateContext(prevCtx.settings, prevCtx.options, prevCtx.depth + 1);
 
+		// 注意：onDone/onError 已负责 resolve，此处仅用 .catch 兜底未预期的 throw
 		void runAgentLoop(
 			prevCtx.settings,
 			subMessages,
 			{ ...prevCtx.options, signal: subAc.signal },
 			handlers
-		).then(() => resolve()).catch((e) => { errorMsg = String(e); resolve(); });
+		).catch((e) => { errorMsg = String(e); resolve(); });
 	});
 
 	if (errorMsg) {

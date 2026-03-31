@@ -189,7 +189,26 @@ async function rebuildInternal(rootNorm: string, relativeFiles: string[]): Promi
 	if (getSettings().indexing?.semanticIndexEnabled === false) {
 		return;
 	}
-	const targets = relativeFiles.filter(isCodeRel).slice(0, 2500);
+	const codeFiles = relativeFiles.filter(isCodeRel);
+
+	// 按最近修改时间降序排序，优先索引活跃文件（避免大仓固定前缀截断遗漏重要文件）
+	// 先并发 stat 前 5000 个，再取 top 2500
+	const STAT_SAMPLE = 5000;
+	const INDEX_LIMIT = 2500;
+	const sample = codeFiles.slice(0, STAT_SAMPLE);
+	const withMtime = await Promise.all(
+		sample.map(async (rel) => {
+			try {
+				const st = await fsp.stat(path.join(rootNorm, rel.split('/').join(path.sep)));
+				return { rel, mtime: st.mtimeMs };
+			} catch {
+				return { rel, mtime: 0 };
+			}
+		})
+	);
+	withMtime.sort((a, b) => b.mtime - a.mtime);
+	const targets = withMtime.slice(0, INDEX_LIMIT).map((x) => x.rel);
+
 	const next: Chunk[] = [];
 	let gid = 0;
 	for (const rel of targets) {
@@ -290,12 +309,14 @@ export function semanticSearchChunks(query: string, topK: number): Chunk[] {
 
 /**
  * 注入到 system append 的 Markdown 块（同步；索引未就绪时返回空串）。
- * recentPaths：最近触碰的文件相对路径列表（来自 fileStates），用于 boosting。
+ * @param recentPaths 最近触碰的文件相对路径列表（来自 fileStates），用于 boosting。
+ * @param excludePaths 已通过 @ 引用或工具读取的路径，对应 chunk 将被过滤以避免重复注入。
  */
 export function buildSemanticContextBlock(
 	query: string,
 	maxChunks: number,
-	recentPaths?: string[]
+	recentPaths?: string[],
+	excludePaths?: string[]
 ): string {
 	if (getSettings().indexing?.semanticIndexEnabled === false) {
 		return '';
@@ -305,15 +326,26 @@ export function buildSemanticContextBlock(
 		return '';
 	}
 
-	let hits = rawHits;
+	// 过滤掉已在上下文中的路径（避免重复）
+	let filtered = rawHits;
+	if (excludePaths && excludePaths.length > 0) {
+		const excludeSet = new Set(excludePaths.map((p) => p.replace(/\\/g, '/')));
+		filtered = rawHits.filter((c) => !excludeSet.has(c.relPath.replace(/\\/g, '/')));
+	}
+
+	if (filtered.length === 0) {
+		return '';
+	}
+
+	let hits = filtered;
 	if (recentPaths && recentPaths.length > 0) {
 		const recentSet = new Set(recentPaths.map((p) => p.replace(/\\/g, '/')));
 		// 最近触碰文件的 chunk 提升到前面，其余按原顺序
-		const boosted = rawHits.filter((c) => recentSet.has(c.relPath.replace(/\\/g, '/')));
-		const rest = rawHits.filter((c) => !recentSet.has(c.relPath.replace(/\\/g, '/')));
+		const boosted = filtered.filter((c) => recentSet.has(c.relPath.replace(/\\/g, '/')));
+		const rest = filtered.filter((c) => !recentSet.has(c.relPath.replace(/\\/g, '/')));
 		hits = [...boosted, ...rest].slice(0, maxChunks);
 	} else {
-		hits = rawHits.slice(0, maxChunks);
+		hits = filtered.slice(0, maxChunks);
 	}
 
 	const body = hits

@@ -144,6 +144,8 @@ export function buildAgentSystemAppend(opts: {
 export type PreparedUserTurn = {
 	userText: string;
 	agentSystemAppend: string;
+	/** 用户消息中通过 @ 引用的工作区相对路径列表，用于语义检索去重 */
+	atPaths: string[];
 };
 
 export function prepareUserTurnForChat(
@@ -166,5 +168,5 @@ export function prepareUserTurnForChat(
 		skillSystemBlock,
 		thirdPartyRules: thirdParty,
 	});
-	return { userText, agentSystemAppend };
+	return { userText, agentSystemAppend, atPaths };
 }

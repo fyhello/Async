@@ -69,11 +69,25 @@ import {
 	getWorkspaceSemanticIndexStats,
 	scheduleWorkspaceSemanticRebuild,
 } from '../workspaceSemanticIndex.js';
+import { getGitContextBlock, clearGitContextCache } from '../gitContext.js';
 
 const execFileAsync = promisify(execFile);
 
 const tsLspSession = new TsLspSession();
 setToolLspSession(tsLspSession);
+
+/**
+ * 融合当前用户输入与最近几轮历史 user 消息，构建更丰富的语义检索 query。
+ * 多轮对话场景下，仅用当前 userText 检索可能遗漏与历史上下文相关的代码片段。
+ */
+function buildEnrichedQuery(userText: string, threadMessages: ChatMessage[]): string {
+	const recentUserTexts = threadMessages
+		.filter((m) => m.role === 'user')
+		.slice(-3)
+		.map((m) => m.content.slice(0, 200))
+		.join(' ');
+	return `${userText} ${recentUserTexts}`.slice(0, 1000);
+}
 
 const abortByThread = new Map<string, AbortController>();
 const agentRevertSnapshotsByThread = new Map<string, Map<string, string | null>>();
@@ -395,6 +409,7 @@ export function registerIpc(): void {
 		stopWorkspaceFileIndex();
 		await tsLspSession.dispose();
 		setWorkspaceRoot(null);
+		clearGitContextCache();
 		return { ok: true as const };
 	});
 
@@ -640,7 +655,7 @@ export function registerIpc(): void {
 					workspaceFiles = [];
 				}
 			}
-			const { userText, agentSystemAppend } = prepareUserTurnForChat(text, settings.agent, root, workspaceFiles);
+			const { userText, agentSystemAppend, atPaths } = prepareUserTurnForChat(text, settings.agent, root, workspaceFiles);
 
 			let finalSystemAppend = agentSystemAppend;
 			if (mode === 'plan' && workspaceFiles.length > 0) {
@@ -654,9 +669,17 @@ export function registerIpc(): void {
 
 		if (modeExpandsWorkspaceFileContext(mode) && userText.trim().length > 8) {
 			const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
-			const sem = buildSemanticContextBlock(userText, 6, recentPaths);
+			const enrichedQuery = buildEnrichedQuery(userText, getThread(threadId)?.messages ?? []);
+			const sem = buildSemanticContextBlock(enrichedQuery, 6, recentPaths, atPaths.length > 0 ? atPaths : undefined);
 			if (sem) {
 				finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
+			}
+		}
+
+		if (modeExpandsWorkspaceFileContext(mode) && root && getSettings().indexing?.gitContextEnabled !== false) {
+			const gitBlock = await getGitContextBlock(root);
+			if (gitBlock) {
+				finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
 			}
 		}
 
@@ -698,7 +721,7 @@ export function registerIpc(): void {
 						workspaceFiles = [];
 					}
 				}
-				const { userText, agentSystemAppend } = prepareUserTurnForChat(trimmed, settings.agent, root, workspaceFiles);
+				const { userText, agentSystemAppend, atPaths } = prepareUserTurnForChat(trimmed, settings.agent, root, workspaceFiles);
 
 				let finalSystemAppend = agentSystemAppend;
 				if (mode === 'plan' && workspaceFiles.length > 0) {
@@ -712,9 +735,17 @@ export function registerIpc(): void {
 
 			if (modeExpandsWorkspaceFileContext(mode) && userText.trim().length > 8) {
 				const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
-				const sem = buildSemanticContextBlock(userText, 6, recentPaths);
+				const enrichedQuery = buildEnrichedQuery(userText, getThread(threadId)?.messages ?? []);
+				const sem = buildSemanticContextBlock(enrichedQuery, 6, recentPaths, atPaths.length > 0 ? atPaths : undefined);
 				if (sem) {
 					finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
+				}
+			}
+
+			if (modeExpandsWorkspaceFileContext(mode) && root && getSettings().indexing?.gitContextEnabled !== false) {
+				const gitBlock = await getGitContextBlock(root);
+				if (gitBlock) {
+					finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
 				}
 			}
 
