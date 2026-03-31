@@ -1,26 +1,30 @@
 /**
- * AI 工具调用成功结果的可折叠内联卡片（search_files / read_file / list_dir）。
+ * AI 工具调用成功结果的可折叠内联卡片（search_files / read_file / list_dir / execute_command）。
  *
- * 动态效果：收到完整结果后，用逐行入场动画模拟 Cursor 那种「结果一条一条滚出来」的感觉。
- * 折叠态：用 @chenglou/pretext 按像素预算截取可见行，避免固定行数导致的高度抖动。
- * 展开态：全量滚动展示，支持点击 search_files 匹配行跳转编辑器。
+ * 动画：播放时固定高度 + overflow-y:auto（滚动条），逐行追加并自动滚底。
+ * 播完后：read/search/命令输出用 Monaco colorize 做语法高亮（与编辑器主题一致）。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { layout, prepare } from '@chenglou/pretext';
 import type { ActivityResultLine } from './agentChatSegments';
+import {
+	colorizeJoinedLines,
+	colorizeSearchMatchLines,
+	languageIdFromPath,
+} from './agentResultMonaco';
 import { FileTypeIcon } from './fileTypeIcons';
 
-const RESULT_MONO_FONT =
-	'11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+const RESULT_MONO_FONT = '11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const RESULT_MONO_LH = 11.5 * 1.55;
 const RESULT_PREVIEW_MAX_PX = 200;
 
-/** 每行入场间隔（ms）。行数越多间隔越短，保证总动画时长不超过约 600ms */
-function rowInterval(totalLines: number): number {
-	if (totalLines <= 5) return 60;
-	if (totalLines <= 15) return 35;
-	if (totalLines <= 40) return 18;
-	return 10;
+/** 首行较快出现，后续行在总时长内均分，避免少行时像「一整块弹出」 */
+function rowIntervalMs(total: number): number {
+	if (total <= 1) return 0;
+	const minTotal = 820;
+	const maxTotal = 2300;
+	const target = Math.min(maxTotal, Math.max(minTotal, 40 * total));
+	return Math.max(14, Math.floor(target / (total - 1)));
 }
 
 function fileBasename(p: string): string {
@@ -40,171 +44,166 @@ function sliceByPixelBudget(
 		const text = line.text || '\u00a0';
 		const p = prepare(text, RESULT_MONO_FONT, { whiteSpace: 'pre-wrap' });
 		const h = layout(p, w, RESULT_MONO_LH).height;
-		if (acc + h > maxPx && out.length > 0) {
-			break;
-		}
+		if (acc + h > maxPx && out.length > 0) break;
 		acc += h;
 		out.push(line);
 	}
 	return out;
 }
 
-/** 按内容生成稳定签名（父组件常每次渲染新建 lines 数组，不能靠引用判断「是否变化」） */
 function stableLinesSignature(lines: readonly ActivityResultLine[]): string {
 	return lines
-		.map(
-			(l) =>
-				`${l.text}\x1f${l.filePath ?? ''}\x1f${l.lineNo ?? ''}\x1f${l.matchText ?? ''}`
-		)
+		.map((l) => `${l.text}\x1f${l.filePath ?? ''}\x1f${l.lineNo ?? ''}\x1f${l.matchText ?? ''}`)
 		.join('\x1e');
 }
 
-/**
- * 切换对话再回来时组件会卸载重挂，实例内 ref 会丢。
- * 用模块级集合记住「这份结果已播完入场」，避免重复 stagger 与每行 CSS 动画。
- */
 const completedResultAnimSignatures = new Set<string>();
 const MAX_COMPLETED_RESULT_ANIM_SIGNATURES = 480;
 
 function rememberCompletedResultAnim(sig: string) {
 	if (completedResultAnimSignatures.size >= MAX_COMPLETED_RESULT_ANIM_SIGNATURES) {
 		const first = completedResultAnimSignatures.values().next().value as string | undefined;
-		if (first !== undefined) {
-			completedResultAnimSignatures.delete(first);
-		}
+		if (first !== undefined) completedResultAnimSignatures.delete(first);
 	}
 	completedResultAnimSignatures.add(sig);
 }
 
+function prefersReducedMotion(): boolean {
+	try {
+		return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+	} catch {
+		return false;
+	}
+}
+
 type Props = {
 	lines: ActivityResultLine[];
-	kind: 'search' | 'read' | 'dir';
+	kind: 'search' | 'read' | 'dir' | 'plain';
+	/** read_file：用于选择 Monaco 语言 */
+	readSourcePath?: string;
 	onOpenFile?: (relPath: string, revealLine?: number) => void;
 };
 
-export function AgentResultCard({ lines, kind, onOpenFile }: Props) {
+export function AgentResultCard({ lines, kind, readSourcePath, onOpenFile }: Props) {
 	const [expanded, setExpanded] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const streamBodyRef = useRef<HTMLDivElement>(null);
 	const [containerWidth, setContainerWidth] = useState(320);
-
-	/** 当前已"播放"到的行数（逐行动画计数器） */
-	const [revealedCount, setRevealedCount] = useState(0);
-	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	/** 已对哪份内容播过入场动画（内容不变则父级重渲染也不重播） */
-	const animatedSignatureRef = useRef<string | null>(null);
 
 	const linesSignature = useMemo(() => stableLinesSignature(lines), [lines]);
 
-	const suppressLineEnterCss = completedResultAnimSignatures.has(linesSignature);
+	const alreadySeen = completedResultAnimSignatures.has(linesSignature);
+	const skipAnim = alreadySeen || prefersReducedMotion() || lines.length === 0;
 
-	useLayoutEffect(() => {
-		if (lines.length === 0) {
+	const [revealedCount, setRevealedCount] = useState<number>(() => (skipAnim ? lines.length : 0));
+	const [streaming, setStreaming] = useState<boolean>(() => !skipAnim && lines.length > 0);
+
+	const [highlightedLines, setHighlightedLines] = useState<(string | null)[] | null>(null);
+
+	const prevSigRef = useRef<string>(linesSignature);
+	if (prevSigRef.current !== linesSignature) {
+		prevSigRef.current = linesSignature;
+		const skip = completedResultAnimSignatures.has(linesSignature) || prefersReducedMotion() || lines.length === 0;
+		setRevealedCount(skip ? lines.length : 0);
+		setStreaming(!skip && lines.length > 0);
+		setHighlightedLines(null);
+	}
+
+	useEffect(() => {
+		if (!streaming) return;
+		if (revealedCount >= lines.length) {
+			setStreaming(false);
+			rememberCompletedResultAnim(linesSignature);
 			return;
 		}
-		if (completedResultAnimSignatures.has(linesSignature)) {
-			setRevealedCount(lines.length);
-			animatedSignatureRef.current = linesSignature;
-		}
-	}, [linesSignature, lines.length]);
+
+		const between = rowIntervalMs(lines.length);
+		const delay = revealedCount === 0 ? Math.min(56, Math.max(20, between || 40)) : between || 32;
+
+		const id = setTimeout(() => {
+			setRevealedCount((c) => c + 1);
+		}, delay);
+		return () => clearTimeout(id);
+	}, [streaming, revealedCount, lines.length, linesSignature]);
+
+	useLayoutEffect(() => {
+		if (!streaming) return;
+		const el = streamBodyRef.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, [revealedCount, streaming]);
 
 	useLayoutEffect(() => {
 		const el = containerRef.current;
 		if (!el) return;
 		const apply = (w: number) => { if (w > 0) setContainerWidth(w); };
 		apply(el.getBoundingClientRect().width);
-		const ro = new ResizeObserver((entries) => {
-			apply(entries[0]?.contentRect.width ?? 0);
-		});
+		const ro = new ResizeObserver((entries) => apply(entries[0]?.contentRect.width ?? 0));
 		ro.observe(el);
 		return () => ro.disconnect();
 	}, []);
 
-	/** 逐行入场动画：仅当 result 内容真正变化时播放（避免整页重渲染时所有 Card 重播） */
+	const canHighlight = kind === 'read' || kind === 'search' || kind === 'plain';
+
 	useEffect(() => {
-		if (linesSignature === animatedSignatureRef.current) {
-			return;
+		let cancelled = false;
+		if (streaming) {
+			setHighlightedLines(null);
+			return () => { cancelled = true; };
+		}
+		if (!canHighlight) {
+			setHighlightedLines(null);
+			return () => { cancelled = true; };
 		}
 
-		if (timerRef.current !== null) {
-			clearTimeout(timerRef.current);
-			timerRef.current = null;
-		}
-
-		if (lines.length === 0) {
-			animatedSignatureRef.current = linesSignature;
-			setRevealedCount(0);
-			return;
-		}
-
-		if (completedResultAnimSignatures.has(linesSignature)) {
-			return;
-		}
-
-		// 立即显示第一行，然后按节奏逐行追加；动画结束后再写入 ref，避免 Strict Mode 重跑 effect 时误判「已播完」
-		setRevealedCount(1);
-
-		const interval = rowInterval(lines.length);
-		const total = lines.length;
-		const sig = linesSignature;
-
-		const tick = (next: number) => {
-			if (next >= total) {
-				animatedSignatureRef.current = sig;
-				rememberCompletedResultAnim(sig);
-				return;
+		(async () => {
+			if (kind === 'read') {
+				const lang = readSourcePath ? languageIdFromPath(readSourcePath) : 'plaintext';
+				const texts = lines.map((l) => (l.lineNo !== undefined ? (l.matchText ?? '') : l.text));
+				const out = await colorizeJoinedLines(texts, lang);
+				if (!cancelled) setHighlightedLines(out);
+			} else if (kind === 'search') {
+				const out = await colorizeSearchMatchLines(lines);
+				if (!cancelled) setHighlightedLines(out);
+			} else if (kind === 'plain') {
+				const texts = lines.map((l) => l.text);
+				const out = await colorizeJoinedLines(texts, 'shell');
+				if (!cancelled) setHighlightedLines(out);
 			}
-			timerRef.current = setTimeout(() => {
-				setRevealedCount(next + 1);
-				tick(next + 1);
-			}, interval);
-		};
-		tick(1);
+		})();
 
-		return () => {
-			if (timerRef.current !== null) {
-				clearTimeout(timerRef.current);
-				timerRef.current = null;
-			}
-		};
-	}, [linesSignature]);
+		return () => { cancelled = true; };
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- lines 内容由 linesSignature 表征
+	}, [linesSignature, streaming, kind, readSourcePath, canHighlight]);
 
 	const previewLines = useMemo(
 		() => sliceByPixelBudget(lines, containerWidth, RESULT_PREVIEW_MAX_PX),
 		[lines, containerWidth]
 	);
 
-	/** 折叠态：取已播放行与预览行的交集（动画还没到的行不显示） */
-	const collapsedVisible = useMemo(
-		() => previewLines.slice(0, revealedCount),
-		[previewLines, revealedCount]
-	);
-
-	/** 展开态：全部已播放行 */
-	const expandedVisible = useMemo(
-		() => lines.slice(0, revealedCount),
-		[lines, revealedCount]
-	);
-
-	const isAnimating = revealedCount < lines.length;
-	const needsExpand = !isAnimating && previewLines.length < lines.length;
-	const visibleLines = expanded ? expandedVisible : collapsedVisible;
+	const needsExpand = !streaming && previewLines.length < lines.length;
 	const hiddenCount = lines.length - previewLines.length;
+
+	const displayLines = streaming
+		? lines.slice(0, revealedCount)
+		: expanded
+			? lines
+			: previewLines;
+
+	const renderHighlightedCode = (i: number, plain: string, className: string) => {
+		const hi = highlightedLines?.[i];
+		if (hi) {
+			return <code className={className} dangerouslySetInnerHTML={{ __html: hi }} />;
+		}
+		return <code className={className}>{plain}</code>;
+	};
 
 	const renderLine = (line: ActivityResultLine, i: number) => {
 		if (kind === 'search' && line.filePath !== undefined) {
 			const canOpen = Boolean(onOpenFile && line.filePath);
 			const fname = fileBasename(line.filePath);
+			const matchPlain = line.matchText ?? '';
 			return (
-				<div
-					key={i}
-					className={[
-						'ref-result-card-line',
-						'ref-result-card-line--search',
-						suppressLineEnterCss ? '' : 'ref-result-card-line--enter',
-					]
-						.filter(Boolean)
-						.join(' ')}
-				>
+				<div key={i} className="ref-result-card-line ref-result-card-line--search">
 					<span className="ref-result-card-file-ico" aria-hidden>
 						<FileTypeIcon fileName={fname} isDirectory={false} className="ref-result-card-ico-svg" />
 					</span>
@@ -223,27 +222,35 @@ export function AgentResultCard({ lines, kind, onOpenFile }: Props) {
 					) : (
 						<span className="ref-result-card-fname">{fname}</span>
 					)}
-					{line.matchText !== undefined ? (
-						<code className="ref-result-card-match">{line.matchText}</code>
+					{matchPlain !== '' || highlightedLines?.[i] ? (
+						renderHighlightedCode(i, matchPlain, 'ref-result-card-match ref-result-card-match--monaco')
 					) : null}
 				</div>
 			);
 		}
 
-		if (kind === 'read' && line.lineNo !== undefined) {
+		if (kind === 'search') {
 			return (
-				<div
-					key={i}
-					className={[
-						'ref-result-card-line',
-						'ref-result-card-line--read',
-						suppressLineEnterCss ? '' : 'ref-result-card-line--enter',
-					]
-						.filter(Boolean)
-						.join(' ')}
-				>
+				<div key={i} className="ref-result-card-line">
+					{renderHighlightedCode(i, line.text, 'ref-result-card-match ref-result-card-match--monaco')}
+				</div>
+			);
+		}
+
+		if (kind === 'read' && line.lineNo !== undefined) {
+			const plain = line.matchText ?? '';
+			return (
+				<div key={i} className="ref-result-card-line ref-result-card-line--read">
 					<span className="ref-result-card-lineno-gutter" aria-hidden>{line.lineNo}</span>
-					<code className="ref-result-card-match">{line.matchText ?? ''}</code>
+					{renderHighlightedCode(i, plain, 'ref-result-card-match ref-result-card-match--monaco')}
+				</div>
+			);
+		}
+
+		if (kind === 'read') {
+			return (
+				<div key={i} className="ref-result-card-line ref-result-card-line--read">
+					{renderHighlightedCode(i, line.text, 'ref-result-card-match ref-result-card-match--monaco')}
 				</div>
 			);
 		}
@@ -252,16 +259,7 @@ export function AgentResultCard({ lines, kind, onOpenFile }: Props) {
 			const isDir = line.text.startsWith('[dir]');
 			const name = line.text.replace(/^\[(dir|file)\]\s*/, '');
 			return (
-				<div
-					key={i}
-					className={[
-						'ref-result-card-line',
-						'ref-result-card-line--dir',
-						suppressLineEnterCss ? '' : 'ref-result-card-line--enter',
-					]
-						.filter(Boolean)
-						.join(' ')}
-				>
+				<div key={i} className="ref-result-card-line ref-result-card-line--dir">
 					<span className="ref-result-card-file-ico" aria-hidden>
 						<FileTypeIcon fileName={name} isDirectory={isDir} className="ref-result-card-ico-svg" />
 					</span>
@@ -270,11 +268,16 @@ export function AgentResultCard({ lines, kind, onOpenFile }: Props) {
 			);
 		}
 
+		if (kind === 'plain') {
+			return (
+				<div key={i} className="ref-result-card-line ref-result-card-line--plain">
+					{renderHighlightedCode(i, line.text, 'ref-result-card-match ref-result-card-match--monaco')}
+				</div>
+			);
+		}
+
 		return (
-			<div
-				key={i}
-				className={['ref-result-card-line', suppressLineEnterCss ? '' : 'ref-result-card-line--enter'].filter(Boolean).join(' ')}
-			>
+			<div key={i} className="ref-result-card-line">
 				<code className="ref-result-card-match">{line.text}</code>
 			</div>
 		);
@@ -284,39 +287,46 @@ export function AgentResultCard({ lines, kind, onOpenFile }: Props) {
 
 	return (
 		<div ref={containerRef} className="ref-result-card">
-			<div
-				className={[
-					'ref-result-card-body',
-					!expanded ? 'ref-result-card-body--preview' : 'ref-result-card-body--expanded',
-				].join(' ')}
-			>
-				{visibleLines.map((line, i) => renderLine(line, i))}
-				{/* 动画进行中：在末尾显示扫描光标 */}
-				{isAnimating ? <div className="ref-result-card-scanning" aria-hidden /> : null}
-			</div>
-			{needsExpand ? (
-				<div className={['ref-result-card-chrome', expanded ? 'is-expanded' : ''].filter(Boolean).join(' ')}>
-					{!expanded ? <div className="ref-result-card-fade" aria-hidden /> : null}
-					<button
-						type="button"
-						className="ref-result-card-toggle"
-						aria-expanded={expanded}
-						onClick={() => setExpanded((v) => !v)}
-					>
-						{expanded ? (
-							<>
-								<IconChevron up />
-								<span>收起</span>
-							</>
-						) : (
-							<>
-								<IconChevron up={false} />
-								<span>展开全部 {hiddenCount} 行</span>
-							</>
-						)}
-					</button>
+			{streaming ? (
+				<div ref={streamBodyRef} className="ref-result-card-body--stream">
+					{displayLines.map((line, i) => renderLine(line, i))}
+					<div className="ref-result-card-stream-cursor" aria-hidden />
 				</div>
-			) : null}
+			) : (
+				<>
+					<div
+						className={[
+							'ref-result-card-body',
+							!expanded ? 'ref-result-card-body--preview' : 'ref-result-card-body--expanded',
+						].join(' ')}
+					>
+						{displayLines.map((line, i) => renderLine(line, i))}
+					</div>
+					{needsExpand ? (
+						<div className={['ref-result-card-chrome', expanded ? 'is-expanded' : ''].filter(Boolean).join(' ')}>
+							{!expanded ? <div className="ref-result-card-fade" aria-hidden /> : null}
+							<button
+								type="button"
+								className="ref-result-card-toggle"
+								aria-expanded={expanded}
+								onClick={() => setExpanded((v) => !v)}
+							>
+								{expanded ? (
+									<>
+										<IconChevron up />
+										<span>收起</span>
+									</>
+								) : (
+									<>
+										<IconChevron up={false} />
+										<span>展开全部 {hiddenCount} 行</span>
+									</>
+								)}
+							</button>
+						</div>
+					) : null}
+				</>
+			)}
 		</div>
 	);
 }

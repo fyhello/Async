@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { AgentActivityGroup } from './AgentActivityGroup';
 import { AgentCommandCard } from './AgentCommandCard';
 import { AgentDiffCard } from './AgentDiffCard';
 import { AgentEditCard } from './AgentEditCard';
@@ -90,6 +91,14 @@ export function ChatMarkdown({
 								onOpenFile={onOpenAgentFile}
 							/>
 						);
+					case 'activity_group':
+						return (
+							<AgentActivityGroup
+								key={i}
+								group={seg}
+								onOpenFile={onOpenAgentFile}
+							/>
+						);
 					case 'file_changes':
 						return null;
 					case 'activity': {
@@ -132,6 +141,7 @@ export function ChatMarkdown({
 									<AgentResultCard
 										lines={seg.resultLines}
 										kind={seg.resultKind}
+										readSourcePath={seg.agentReadLink?.path}
 										onOpenFile={onOpenAgentFile}
 									/>
 								) : null}

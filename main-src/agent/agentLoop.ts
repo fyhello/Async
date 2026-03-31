@@ -307,7 +307,7 @@ async function runOpenAILoop(
 					tools,
 					stream: true,
 					temperature,
-					max_tokens: options.maxOutputTokens,
+					max_completion_tokens: options.maxOutputTokens,
 					...(effort ? { reasoning_effort: effort } : {}),
 				},
 				{ signal: options.signal }

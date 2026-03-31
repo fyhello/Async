@@ -58,7 +58,7 @@ export type ActivitySegment = {
 	/** search_files / read_file / list_dir 成功结果行，用于可折叠内联展示 */
 	resultLines?: ActivityResultLine[];
 	/** resultLines 对应的工具名，用于选择渲染样式 */
-	resultKind?: 'search' | 'read' | 'dir';
+	resultKind?: 'search' | 'read' | 'dir' | 'plain';
 };
 
 export type ToolCallSegment = {
@@ -80,11 +80,23 @@ export type StreamingToolPreview = {
 	index: number;
 };
 
+/** 连续 activity 行合并后的分组（对应 Cursor "Explored N files" 折叠块） */
+export type ActivityGroupSegment = {
+	type: 'activity_group';
+	/** 组内所有 activity（含 resultLines） */
+	items: ActivitySegment[];
+	/** 整组是否仍在进行中（最后一项 pending） */
+	pending: boolean;
+	/** 摘要标签，如 "Explored 3 files, 2 searches" */
+	summary: string;
+};
+
 export type AssistantSegment =
 	| { type: 'markdown'; text: string }
 	| { type: 'diff'; diff: string }
 	| { type: 'command'; lang: string; body: string }
 	| ActivitySegment
+	| ActivityGroupSegment
 	| { type: 'file_changes'; files: FileChangeSummary[] }
 	| FileEditSegment
 	| ToolCallSegment
@@ -573,6 +585,12 @@ function parseDirResultLines(result: string): ActivityResultLine[] {
 		.map((line) => ({ text: line }));
 }
 
+/** 解析 execute_command 标准输出（保留空行，与终端一致） */
+function parseCommandResultLines(result: string): ActivityResultLine[] {
+	if (!result || result.includes('(command completed with no output)')) return [];
+	return result.split('\n').map((line) => ({ text: line }));
+}
+
 function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment {
 	const inProgress = mk.result === undefined;
 	const failed = mk.success === false;
@@ -671,6 +689,10 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 		}
 		case 'execute_command': {
 			const cmd = getPath('command').slice(0, 60);
+			const resultLines =
+				!inProgress && !failed && mk.result
+					? parseCommandResultLines(mk.result)
+					: undefined;
 			return {
 				type: 'activity',
 				text: failed
@@ -681,6 +703,8 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 				status: failed ? 'error' : inProgress ? 'pending' : 'success',
 				detail,
 				summary,
+				resultLines: resultLines?.length ? resultLines : undefined,
+				resultKind: resultLines?.length ? 'plain' : undefined,
 			};
 		}
 		default:
@@ -897,7 +921,7 @@ function extractToolSegments(content: string, t: TFunction): { segments: Assista
 		if (text) segments.push(...segmentParagraphsForActivity(text));
 	}
 
-	return { segments: mergeAdjacentMarkdown(segments), hasTools: true };
+	return { segments: groupActivities(mergeAdjacentMarkdown(segments)), hasTools: true };
 }
 
 function countLines(s: string): number {
@@ -976,6 +1000,70 @@ function mergeAdjacentMarkdown(segs: AssistantSegment[]): AssistantSegment[] {
 		}
 	}
 	return m;
+}
+
+/** 为一组 activity 生成摘要标签（仿 Cursor "Explored N files, M searches"） */
+function buildGroupSummary(items: ActivitySegment[]): string {
+	let reads = 0, searches = 0, dirs = 0, cmds = 0, writes = 0, others = 0;
+	for (const it of items) {
+		const t = it.text.toLowerCase();
+		if (it.resultKind === 'read' || /read|reading/.test(t)) reads++;
+		else if (it.resultKind === 'search' || /search|searched|searching|grepped/.test(t)) searches++;
+		else if (it.resultKind === 'dir' || /list|listed|listing/.test(t)) dirs++;
+		else if (/ran|running|run|executed|command/.test(t)) cmds++;
+		else if (/wrote|write|created|updated|edited|edit/.test(t)) writes++;
+		else others++;
+	}
+	const parts: string[] = [];
+	const total = reads + searches + dirs + cmds + writes + others;
+	if (reads > 0) parts.push(`${reads} file${reads > 1 ? 's' : ''}`);
+	if (searches > 0) parts.push(`${searches} search${searches > 1 ? 'es' : ''}`);
+	if (dirs > 0) parts.push(`${dirs} dir${dirs > 1 ? 's' : ''}`);
+	if (cmds > 0) parts.push(`${cmds} command${cmds > 1 ? 's' : ''}`);
+	if (writes > 0) parts.push(`${writes} edit${writes > 1 ? 's' : ''}`);
+	if (others > 0 && parts.length === 0) parts.push(`${others} step${others > 1 ? 's' : ''}`);
+	if (parts.length === 0) return `${total} step${total > 1 ? 's' : ''}`;
+	return `Explored ${parts.join(', ')}`;
+}
+
+/**
+ * 把连续的 activity 行（以及紧跟其后的 file_edit）合并成 activity_group。
+ * file_edit 不进入 group，保持独立渲染（diff 卡片）。
+ * 单个 pending activity 不合并（仍单独显示，避免"进行中"状态被折叠）。
+ */
+function groupActivities(segs: AssistantSegment[]): AssistantSegment[] {
+	const out: AssistantSegment[] = [];
+	let i = 0;
+	while (i < segs.length) {
+		const s = segs[i]!;
+		if (s.type !== 'activity') {
+			out.push(s);
+			i++;
+			continue;
+		}
+		// 收集连续的 activity（允许中间夹 file_edit，file_edit 不进 group）
+		const groupItems: ActivitySegment[] = [];
+		let j = i;
+		while (j < segs.length && (segs[j]!.type === 'activity' || segs[j]!.type === 'file_edit')) {
+			if (segs[j]!.type === 'activity') groupItems.push(segs[j] as ActivitySegment);
+			j++;
+		}
+		// 单行 pending 不折叠（保持原来的进行中指示器）
+		if (groupItems.length <= 1) {
+			out.push(s);
+			i++;
+			continue;
+		}
+		const pending = groupItems[groupItems.length - 1]!.status === 'pending';
+		const summary = buildGroupSummary(groupItems);
+		out.push({ type: 'activity_group', items: groupItems, pending, summary });
+		// file_edit 仍独立输出（在 group 之后）
+		for (let k = i; k < j; k++) {
+			if (segs[k]!.type === 'file_edit') out.push(segs[k]!);
+		}
+		i = j;
+	}
+	return out;
 }
 
 // ─── Utility exports ────────────────────────────────────────────────────
