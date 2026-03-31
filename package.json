@@ -10,6 +10,7 @@
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "icons": "node scripts/export-app-icon.mjs",
+    "readme:screenshots": "node scripts/export-readme-screenshots.mjs",
     "desktop": "npm run build && cross-env ASYNC_SHELL_LOAD_DIST=1 electron .",
     "dev": "npm run build:main && concurrently -k \"npm run build:main:watch\" \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "dev:debug": "npm run build:main && concurrently -k \"npm run build:main:watch\" \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env ASYNC_SHELL_DEVTOOLS=1 electron .\"",

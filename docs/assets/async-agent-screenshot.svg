@@ -17,5 +17,5 @@
   <rect x="16" y="56" width="240" height="10" fill="#252530" rx="2"/>
   <rect x="16" y="76" width="220" height="8" fill="#1a1a22" rx="2"/>
   <rect x="1016" y="56" width="248" height="400" fill="#111116" rx="4" stroke="#252530"/>
-  <text x="640" y="26" fill="#94a3b8" font-family="system-ui,Segoe UI,sans-serif" font-size="13" text-anchor="middle">Async  Agent</text>
+  <text x="640" y="26" fill="#94a3b8" font-family="system-ui,Segoe UI,sans-serif" font-size="13" text-anchor="middle">Async - Agent</text>
 </svg>
