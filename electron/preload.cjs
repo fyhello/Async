@@ -13,6 +13,8 @@ const INVOKE_CHANNELS = new Set([
 	'lsp:ts:start',
 	'lsp:ts:stop',
 	'lsp:ts:definition',
+	'workspace:indexing:stats',
+	'workspace:indexing:rebuild',
 	'settings:get',
 	'settings:set',
 	'threads:list',

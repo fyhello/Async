@@ -5792,6 +5792,26 @@ body {
 	max-width: 720px;
 }
 
+.ref-settings-panel--indexing {
+	max-width: 720px;
+}
+
+.ref-settings-indexing-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin-top: 14px;
+	align-items: center;
+}
+
+.ref-settings-indexing-stat-list {
+	margin: 8px 0 0;
+	padding-left: 1.25em;
+	line-height: 1.65;
+	color: var(--void-fg-1);
+	font-size: 13px;
+}
+
 .ref-settings-lead {
 	margin: 0 0 20px;
 	font-size: 14px;

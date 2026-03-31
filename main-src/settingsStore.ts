@@ -28,6 +28,22 @@ export type ShellUiSettings = {
 	sidebarLayout?: SidebarLayoutPx;
 };
 
+/** 工作区索引与语言服务（未设置字段视为开启，与旧 settings.json 兼容） */
+export type ShellIndexingSettings = {
+	/** 导出符号索引：Quick Open @、search_files(symbol) */
+	symbolIndexEnabled?: boolean;
+	/** 本地 TF-IDF 语义块：构建索引并注入 Agent/Plan/Debug 对话上下文 */
+	semanticIndexEnabled?: boolean;
+	/** TypeScript/JavaScript 语言服务（跳转定义等） */
+	tsLspEnabled?: boolean;
+};
+
+const INDEXING_DEFAULTS: Required<ShellIndexingSettings> = {
+	symbolIndexEnabled: true,
+	semanticIndexEnabled: true,
+	tsLspEnabled: true,
+};
+
 export type ShellSettings = {
 	/** 界面语言：zh-CN 简体中文（默认）、en 英文 */
 	language?: 'zh-CN' | 'en';
@@ -68,6 +84,8 @@ export type ShellSettings = {
 	agent?: AgentCustomization;
 	/** 窗口布局等纯界面状态 */
 	ui?: ShellUiSettings;
+	/** 索引与 LSP */
+	indexing?: ShellIndexingSettings;
 };
 
 const defaultSettings: ShellSettings = {
@@ -163,7 +181,12 @@ export function getSettings(): ShellSettings {
 }
 
 export function patchSettings(partial: Partial<ShellSettings>): ShellSettings {
-	const { ui: partialUi, ...partialRest } = partial;
+	const { ui: partialUi, indexing: partialIndexing, ...partialRest } = partial;
+
+	const mergedIndexing =
+		partialIndexing !== undefined
+			? { ...INDEXING_DEFAULTS, ...(cached.indexing ?? {}), ...partialIndexing }
+			: cached.indexing;
 
 	const nextModels =
 		partial.models !== undefined
@@ -208,6 +231,7 @@ export function patchSettings(partial: Partial<ShellSettings>): ShellSettings {
 		models: nextModels,
 		agent: nextAgent,
 		ui: mergedUi,
+		indexing: partialIndexing !== undefined ? mergedIndexing : cached.indexing,
 	};
 	cached = migrateThinkingByModel(cached).next;
 	save();

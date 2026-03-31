@@ -70,6 +70,7 @@ import { useComposerAtMention } from './useComposerAtMention';
 import { UserMessageRich } from './UserMessageRich';
 import { BrandLogo } from './BrandLogo';
 import { defaultAgentCustomization, type AgentCustomization } from './agentSettingsTypes';
+import { normalizeIndexingSettings, type IndexingSettingsState } from './indexingSettingsTypes';
 import { defaultEditorSettings, editorSettingsToMonacoOptions, type EditorSettings } from './EditorSettingsPanel';
 import { EditorTabBar, tabIdFromPath, type EditorTab } from './EditorTabBar';
 import { MenubarFileMenu } from './MenubarFileMenu';
@@ -642,6 +643,7 @@ export default function App() {
 	const [enabledModelIds, setEnabledModelIds] = useState<string[]>([]);
 	const [agentCustomization, setAgentCustomization] = useState<AgentCustomization>(() => defaultAgentCustomization());
 	const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => defaultEditorSettings());
+	const [indexingSettings, setIndexingSettings] = useState<IndexingSettingsState>(() => normalizeIndexingSettings());
 	const [layoutMode, setLayoutMode] = useState<LayoutMode>('editor');
 	const [homeRecents, setHomeRecents] = useState<string[]>([]);
 	/** 文件菜单「打开最近的文件夹」：与是否打开工作区无关 */
@@ -983,6 +985,11 @@ export default function App() {
 					agent?: AgentCustomization;
 					editor?: Partial<EditorSettings>;
 					ui?: { sidebarLayout?: { left?: unknown; right?: unknown } };
+					indexing?: {
+						symbolIndexEnabled?: boolean;
+						semanticIndexEnabled?: boolean;
+						tsLspEnabled?: boolean;
+					};
 				};
 				setLocale(normalizeLocale(st.language));
 				const sl = st.ui?.sidebarLayout;
@@ -1026,6 +1033,7 @@ export default function App() {
 				if (st.editor) {
 					setEditorSettings({ ...defaultEditorSettings(), ...st.editor });
 				}
+				setIndexingSettings(normalizeIndexingSettings(st.indexing));
 				await refreshGit();
 			} catch (e) {
 				setIpcOk(String(e));
@@ -1226,6 +1234,11 @@ export default function App() {
 			void shell.invoke('lsp:ts:stop').catch(() => {});
 			return;
 		}
+		if (!indexingSettings.tsLspEnabled) {
+			setTsLspStatus('off');
+			void shell.invoke('lsp:ts:stop').catch(() => {});
+			return;
+		}
 		let cancelled = false;
 		setTsLspStatus('starting');
 		void shell.invoke('lsp:ts:start', workspace).then((r: unknown) => {
@@ -1238,7 +1251,7 @@ export default function App() {
 		return () => {
 			cancelled = true;
 		};
-	}, [shell, workspace]);
+	}, [shell, workspace, indexingSettings.tsLspEnabled]);
 
 	useEffect(() => {
 		if (!shell || workspace) {
@@ -1637,6 +1650,11 @@ export default function App() {
 				commands: agentCustomization.commands ?? [],
 			},
 			editor: editorSettings,
+			indexing: {
+				symbolIndexEnabled: indexingSettings.symbolIndexEnabled,
+				semanticIndexEnabled: indexingSettings.semanticIndexEnabled,
+				tsLspEnabled: indexingSettings.tsLspEnabled,
+			},
 		});
 	}, [
 		shell,
@@ -1652,6 +1670,7 @@ export default function App() {
 		thinkingByModelId,
 		agentCustomization,
 		editorSettings,
+		indexingSettings,
 		locale,
 	]);
 
@@ -1694,6 +1713,16 @@ export default function App() {
 			if (shell) {
 				await shell.invoke('settings:set', { defaultModel: id });
 			}
+		},
+		[shell]
+	);
+
+	const onPersistIndexingPatch = useCallback(
+		(patch: Partial<IndexingSettingsState>) => {
+			if (!shell) {
+				return;
+			}
+			void shell.invoke('settings:set', { indexing: patch });
 		},
 		[shell]
 	);
@@ -4232,7 +4261,7 @@ export default function App() {
 				onFocusSearchSidebar={(q) => focusSearchSidebarFromQuickOpen(q)}
 				onGoToLine={goToLineInEditor}
 				initialQuery={quickOpenSeed}
-				searchWorkspaceSymbols={shell ? searchWorkspaceSymbolsFn : undefined}
+				searchWorkspaceSymbols={shell && indexingSettings.symbolIndexEnabled ? searchWorkspaceSymbolsFn : undefined}
 				t={t}
 			/>
 
@@ -4266,6 +4295,11 @@ export default function App() {
 							editorSettings={editorSettings}
 							onChangeEditorSettings={setEditorSettings}
 							onPersistLanguage={(loc) => void onPersistLanguage(loc)}
+							indexingSettings={indexingSettings}
+							onChangeIndexingSettings={setIndexingSettings}
+							onPersistIndexingPatch={onPersistIndexingPatch}
+							shell={shell ?? null}
+							workspaceOpen={!!workspace}
 						/>
 					</div>
 				</div>

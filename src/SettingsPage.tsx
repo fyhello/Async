@@ -8,6 +8,8 @@ import { LLM_PROVIDER_OPTIONS, type ModelRequestParadigm } from './llmProvider';
 import type { AgentCustomization } from './agentSettingsTypes';
 import { SettingsAgentPanel } from './SettingsAgentPanel';
 import { EditorSettingsPanel, type EditorSettings } from './EditorSettingsPanel';
+import { SettingsIndexingPanel } from './SettingsIndexingPanel';
+import type { IndexingSettingsState } from './indexingSettingsTypes';
 import { useI18n, type AppLocale } from './i18n';
 
 export type SettingsNavId =
@@ -44,7 +46,7 @@ function navItemsForT(t: (key: string) => string): NavItem[] {
 		{ id: 'rules', label: t('settings.nav.rules') },
 		{ id: 'tools', label: t('settings.nav.tools'), soon: true },
 		{ id: 'hooks', label: t('settings.nav.hooks'), soon: true },
-		{ id: 'indexing', label: t('settings.nav.indexing'), soon: true },
+		{ id: 'indexing', label: t('settings.nav.indexing') },
 		{ id: 'network', label: t('settings.nav.network'), soon: true },
 		{ id: 'beta', label: t('settings.nav.beta'), soon: true },
 		{ id: 'dev', label: t('settings.nav.dev'), soon: true },
@@ -154,6 +156,11 @@ type Props = {
 	onChangeEditorSettings: (v: EditorSettings) => void;
 	/** 语言切换后立即持久化（与关闭设置页时的全量保存配合） */
 	onPersistLanguage?: (locale: AppLocale) => void;
+	indexingSettings: IndexingSettingsState;
+	onChangeIndexingSettings: (v: IndexingSettingsState) => void;
+	onPersistIndexingPatch: (patch: Partial<IndexingSettingsState>) => void;
+	shell: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> } | null;
+	workspaceOpen: boolean;
 };
 
 export function SettingsPage({
@@ -182,6 +189,11 @@ export function SettingsPage({
 	editorSettings,
 	onChangeEditorSettings,
 	onPersistLanguage,
+	indexingSettings,
+	onChangeIndexingSettings,
+	onPersistIndexingPatch,
+	shell,
+	workspaceOpen,
 }: Props) {
 	const { t, locale, setLocale } = useI18n();
 	const navItems = useMemo(() => navItemsForT(t), [t]);
@@ -300,7 +312,13 @@ export function SettingsPage({
 								type="button"
 								className={`ref-settings-nav-row ${nav === item.id ? 'is-active' : ''}`}
 								onClick={() => {
-									if (item.soon && item.id !== 'models' && item.id !== 'general' && item.id !== 'editor') {
+									if (
+										item.soon &&
+										item.id !== 'models' &&
+										item.id !== 'general' &&
+										item.id !== 'editor' &&
+										item.id !== 'indexing'
+									) {
 										return;
 									}
 									setNav(item.id);
@@ -341,7 +359,14 @@ export function SettingsPage({
 								{nav === 'models' ? t('settings.title.models') : null}
 								{nav === 'rules' ? t('settings.title.rules') : null}
 								{nav === 'editor' ? t('settings.title.editor') : null}
-								{nav !== 'general' && nav !== 'models' && nav !== 'rules' && nav !== 'editor' ? t('settings.title.comingSoon') : null}
+								{nav === 'indexing' ? t('settings.title.indexing') : null}
+								{nav !== 'general' &&
+								nav !== 'models' &&
+								nav !== 'rules' &&
+								nav !== 'editor' &&
+								nav !== 'indexing'
+									? t('settings.title.comingSoon')
+									: null}
 							</h1>
 						</div>
 
@@ -559,7 +584,21 @@ export function SettingsPage({
 							<EditorSettingsPanel value={editorSettings} onChange={onChangeEditorSettings} />
 						) : null}
 
-						{nav !== 'general' && nav !== 'models' && nav !== 'rules' && nav !== 'editor' ? (
+						{nav === 'indexing' ? (
+							<SettingsIndexingPanel
+								value={indexingSettings}
+								onChange={onChangeIndexingSettings}
+								onPersistPatch={onPersistIndexingPatch}
+								shell={shell}
+								workspaceOpen={workspaceOpen}
+							/>
+						) : null}
+
+						{nav !== 'general' &&
+						nav !== 'models' &&
+						nav !== 'rules' &&
+						nav !== 'editor' &&
+						nav !== 'indexing' ? (
 							<div className="ref-settings-panel">
 								<p className="ref-settings-lead">{t('settings.comingCategory')}</p>
 							</div>

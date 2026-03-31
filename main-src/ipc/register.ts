@@ -5,7 +5,11 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setWorkspaceRoot, getWorkspaceRoot, resolveWorkspacePath, isPathInsideRoot } from '../workspace.js';
-import { ensureWorkspaceFileIndex, stopWorkspaceFileIndex } from '../workspaceFileIndex.js';
+import {
+	ensureWorkspaceFileIndex,
+	stopWorkspaceFileIndex,
+	getWorkspaceFileIndexLiveStats,
+} from '../workspaceFileIndex.js';
 import { getSettings, patchSettings, getRecentWorkspaces, rememberWorkspace } from '../settingsStore.js';
 import {
 	appendMessage,
@@ -27,7 +31,6 @@ import { parseComposerMode } from '../llm/composerMode.js';
 import { resolveChatModel, resolveThinkingLevelForSelection } from '../llm/modelResolve.js';
 import { streamChatUnified } from '../llm/llmRouter.js';
 import { buildWorkspaceTreeSummary, modeExpandsWorkspaceFileContext } from '../llm/workspaceContextExpand.js';
-import { buildSemanticContextBlock } from '../workspaceSemanticIndex.js';
 import {
 	listAgentDiffChunks,
 	applyAgentDiffChunk,
@@ -41,7 +44,18 @@ import { prepareUserTurnForChat } from '../llm/agentMessagePrep.js';
 import { summarizeThreadForSidebar, isTimestampToday } from '../threadListSummary.js';
 import { registerTerminalPtyIpc } from '../terminalPty.js';
 import { TsLspSession } from '../lsp/tsLspSession.js';
-import { searchWorkspaceSymbols } from '../workspaceSymbolIndex.js';
+import {
+	searchWorkspaceSymbols,
+	clearWorkspaceSymbolIndex,
+	getWorkspaceSymbolIndexStats,
+	scheduleWorkspaceSymbolFullRebuild,
+} from '../workspaceSymbolIndex.js';
+import {
+	buildSemanticContextBlock,
+	clearWorkspaceSemanticIndex,
+	getWorkspaceSemanticIndexStats,
+	scheduleWorkspaceSemanticRebuild,
+} from '../workspaceSemanticIndex.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -352,7 +366,49 @@ export function registerIpc(): void {
 	ipcMain.handle('settings:get', () => getSettings());
 
 	ipcMain.handle('settings:set', (_e, partial: Record<string, unknown>) => {
-		return patchSettings(partial as Parameters<typeof patchSettings>[0]);
+		const next = patchSettings(partial as Parameters<typeof patchSettings>[0]);
+		const idx = next.indexing;
+		if (idx?.symbolIndexEnabled === false) {
+			clearWorkspaceSymbolIndex();
+		}
+		if (idx?.semanticIndexEnabled === false) {
+			clearWorkspaceSemanticIndex();
+		}
+		if (idx?.tsLspEnabled === false) {
+			void tsLspSession.dispose();
+		}
+		return next;
+	});
+
+	ipcMain.handle('workspace:indexing:stats', () => {
+		const w = getWorkspaceFileIndexLiveStats();
+		const sym = getWorkspaceSymbolIndexStats();
+		const sem = getWorkspaceSemanticIndexStats();
+		return {
+			ok: true as const,
+			workspaceRoot: w.root,
+			fileCount: w.fileCount,
+			symbolUniqueNames: sym.uniqueNames,
+			symbolIndexedFiles: sym.filesWithSymbols,
+			semanticChunks: sem.chunks,
+			semanticBusy: sem.busy,
+		};
+	});
+
+	ipcMain.handle('workspace:indexing:rebuild', async (_e, payload: { target?: 'symbols' | 'semantic' | 'all' }) => {
+		const root = getWorkspaceRoot();
+		if (!root) {
+			return { ok: false as const, error: 'no-workspace' as const };
+		}
+		const files = await ensureWorkspaceFileIndex(root);
+		const t = payload?.target ?? 'all';
+		if (t === 'symbols' || t === 'all') {
+			scheduleWorkspaceSymbolFullRebuild(root, files);
+		}
+		if (t === 'semantic' || t === 'all') {
+			scheduleWorkspaceSemanticRebuild(root, files);
+		}
+		return { ok: true as const };
 	});
 
 	ipcMain.handle('threads:list', () => {

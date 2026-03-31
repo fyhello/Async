@@ -4,6 +4,7 @@
 
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import { getSettings } from './settingsStore.js';
 
 const CODE_EXT = new Set([
 	'ts',
@@ -185,6 +186,9 @@ function chunkFileContent(relPath: string, content: string): Chunk[] {
 }
 
 async function rebuildInternal(rootNorm: string, relativeFiles: string[]): Promise<void> {
+	if (getSettings().indexing?.semanticIndexEnabled === false) {
+		return;
+	}
 	const targets = relativeFiles.filter(isCodeRel).slice(0, 2500);
 	const next: Chunk[] = [];
 	let gid = 0;
@@ -234,7 +238,14 @@ async function rebuildInternal(rootNorm: string, relativeFiles: string[]): Promi
 /**
  * 在后台构建/刷新索引（与文件列表快照一致）。已在重建时跳过，避免堆积任务。
  */
+export function getWorkspaceSemanticIndexStats(): { chunks: number; busy: boolean; root: string | null } {
+	return { chunks: chunks.length, busy: rebuildBusy != null, root: semRoot };
+}
+
 export function scheduleWorkspaceSemanticRebuild(rootNorm: string, relativeFiles: string[]): void {
+	if (getSettings().indexing?.semanticIndexEnabled === false) {
+		return;
+	}
 	if (rebuildBusy) {
 		return;
 	}
@@ -281,6 +292,9 @@ export function semanticSearchChunks(query: string, topK: number): Chunk[] {
  * 注入到 system append 的 Markdown 块（同步；索引未就绪时返回空串）。
  */
 export function buildSemanticContextBlock(query: string, maxChunks: number): string {
+	if (getSettings().indexing?.semanticIndexEnabled === false) {
+		return '';
+	}
 	const hits = semanticSearchChunks(query, maxChunks);
 	if (hits.length === 0) {
 		return '';

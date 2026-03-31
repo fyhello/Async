@@ -9,7 +9,11 @@ import {
 	scheduleWorkspaceSymbolFullRebuild,
 	clearWorkspaceSymbolIndex,
 } from './workspaceSymbolIndex.js';
-import { scheduleWorkspaceSemanticRebuild, clearWorkspaceSemanticIndex } from './workspaceSemanticIndex.js';
+import {
+	scheduleWorkspaceSemanticRebuild,
+	clearWorkspaceSemanticIndex,
+} from './workspaceSemanticIndex.js';
+import { getSettings } from './settingsStore.js';
 
 /** 遍历时跳过的目录名（小写比较） */
 const SKIP_DIR_NAMES = new Set([
@@ -34,6 +38,10 @@ const SKIP_DIR_NAMES = new Set([
 
 /** 单工作区最大文件条数（提高上限以适配大型 monorepo） */
 export const MAX_WORKSPACE_FILES = 50_000;
+
+export function getWorkspaceFileIndexLiveStats(): { root: string | null; fileCount: number } {
+	return { root: cachedRoot, fileCount: relPathSet.size };
+}
 
 let cachedRoot: string | null = null;
 let relPathSet = new Set<string>();
@@ -291,8 +299,17 @@ export async function ensureWorkspaceFileIndex(rootAbs: string): Promise<string[
 		relPathSet = new Set(list);
 		attachWatcher(rootNorm);
 		const sorted = sortedFromSet();
-		scheduleWorkspaceSymbolFullRebuild(rootNorm, sorted);
-		scheduleWorkspaceSemanticRebuild(rootNorm, sorted);
+		const idx = getSettings().indexing;
+		if (idx?.symbolIndexEnabled !== false) {
+			scheduleWorkspaceSymbolFullRebuild(rootNorm, sorted);
+		} else {
+			clearWorkspaceSymbolIndex();
+		}
+		if (idx?.semanticIndexEnabled !== false) {
+			scheduleWorkspaceSemanticRebuild(rootNorm, sorted);
+		} else {
+			clearWorkspaceSemanticIndex();
+		}
 		return sorted;
 	})();
 

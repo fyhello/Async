@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import { getSettings } from './settingsStore.js';
 
 export type WorkspaceSymbolHit = {
 	name: string;
@@ -194,6 +195,9 @@ function extractSymbols(relPath: string, content: string): WorkspaceSymbolHit[] 
 }
 
 export async function indexWorkspaceSourceFile(rootNorm: string, rel: string): Promise<void> {
+	if (getSettings().indexing?.symbolIndexEnabled === false) {
+		return;
+	}
 	if (indexedRoot !== rootNorm || !isSourceRel(rel)) {
 		return;
 	}
@@ -232,6 +236,10 @@ export function removeWorkspaceSymbolsUnderPrefix(prefixRel: string): void {
  * 全量重建（防抖）。在文件列表扫描完成后调用。
  */
 export function scheduleWorkspaceSymbolFullRebuild(rootNorm: string, relativeFiles: string[]): void {
+	if (getSettings().indexing?.symbolIndexEnabled === false) {
+		clearWorkspaceSymbolIndex();
+		return;
+	}
 	indexedRoot = rootNorm;
 	if (fullRebuildTimer) {
 		clearTimeout(fullRebuildTimer);
@@ -243,6 +251,10 @@ export function scheduleWorkspaceSymbolFullRebuild(rootNorm: string, relativeFil
 }
 
 async function runFullRebuild(rootNorm: string, relativeFiles: string[]): Promise<void> {
+	if (getSettings().indexing?.symbolIndexEnabled === false) {
+		clearWorkspaceSymbolIndex();
+		return;
+	}
 	indexedRoot = rootNorm;
 	byLowerName.clear();
 	byFile.clear();
@@ -253,7 +265,14 @@ async function runFullRebuild(rootNorm: string, relativeFiles: string[]): Promis
 	}
 }
 
+export function getWorkspaceSymbolIndexStats(): { uniqueNames: number; filesWithSymbols: number } {
+	return { uniqueNames: byLowerName.size, filesWithSymbols: byFile.size };
+}
+
 export function searchWorkspaceSymbols(rawQuery: string, limit: number): WorkspaceSymbolHit[] {
+	if (getSettings().indexing?.symbolIndexEnabled === false) {
+		return [];
+	}
 	const q = rawQuery.trim().toLowerCase();
 	if (!q) {
 		return [];
