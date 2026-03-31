@@ -27,9 +27,12 @@ import {
 	isReadOnlyAgentTool,
 	toOpenAITools,
 	toAnthropicTools,
+	type AgentToolDef,
 	type ToolCall,
 } from './agentTools.js';
 import { executeTool, type ToolExecutionHooks } from './toolExecutor.js';
+import { getMcpManager } from '../mcp/index.js';
+import { getMcpServerConfigs } from '../settingsStore.js';
 import { repairAgentThreadMessagesForApi } from './agentToolProtocolRepair.js';
 import type { MistakeLimitContext, MistakeLimitDecision } from './mistakeLimitGate.js';
 import { resolveStreamTimeouts, createStreamTimeoutManager } from '../llm/streamTimeouts.js';
@@ -201,6 +204,44 @@ function inferOpenAIToolNameFromPartialArguments(partial: string): string {
 	return '';
 }
 
+/** Agent 模式：合并内置工具与已连接 MCP 服务器的工具（与 Claude Code 的 mcp__server__tool 命名一致）。Plan 模式不暴露 MCP，避免计划阶段执行外部副作用。 */
+function agentToolDefsForLoop(composerMode: ComposerMode): AgentToolDef[] {
+	const toolMode = composerMode === 'plan' ? 'plan' : 'agent';
+	const base = agentToolsForComposerMode(toolMode);
+	if (toolMode !== 'agent') {
+		return base;
+	}
+	return [...base, ...getMcpManager().getAgentTools()];
+}
+
+function appendMcpToolsSystemHint(systemContent: string, composerMode: ComposerMode): string {
+	if (composerMode !== 'agent') {
+		return systemContent;
+	}
+	const n = getMcpManager().getAgentTools().length;
+	if (n === 0) {
+		return systemContent;
+	}
+	return [
+		systemContent,
+		'',
+		`## MCP tools (${n})`,
+		'Additional tools from configured Model Context Protocol servers are registered with names prefixed `mcp__`.',
+		'Use them when the user needs integrations beyond the built-in workspace tools (e.g. web, APIs, databases). Follow each tool\'s description and parameter schema.',
+	].join('\n');
+}
+
+async function prepareMcpBeforeAgentLoop(composerMode: ComposerMode): Promise<void> {
+	if (composerMode !== 'agent') {
+		return;
+	}
+	const mgr = getMcpManager();
+	mgr.loadConfigs(getMcpServerConfigs());
+	await mgr.startAll().catch((e) => {
+		console.warn('[AgentLoop] MCP startAll:', e instanceof Error ? e.message : e);
+	});
+}
+
 export async function runAgentLoop(
 	settings: ShellSettings,
 	threadMessages: ChatMessage[],
@@ -208,6 +249,7 @@ export async function runAgentLoop(
 	handlers: AgentLoopHandlers
 ): Promise<void> {
 	const messagesForApi = repairAgentThreadMessagesForApi(threadMessages);
+	await prepareMcpBeforeAgentLoop(options.composerMode);
 	switch (options.paradigm) {
 		case 'anthropic':
 			return runAnthropicLoop(settings, messagesForApi, options, handlers);
@@ -319,11 +361,13 @@ async function runOpenAILoop(
 
 	const client = new OpenAI({ apiKey: key, baseURL, httpAgent, dangerouslyAllowBrowser: false });
 	const storedSystem = threadMessages.find((m) => m.role === 'system');
-	const systemContent = composeSystem(storedSystem?.content, options.composerMode, options.agentSystemAppend);
+	const systemContent = appendMcpToolsSystemHint(
+		composeSystem(storedSystem?.content, options.composerMode, options.agentSystemAppend),
+		options.composerMode
+	);
 	const temperature = temperatureForMode(options.composerMode);
 
-	const toolMode = options.composerMode === 'plan' ? 'plan' : 'agent';
-	const tools = toOpenAITools(agentToolsForComposerMode(toolMode));
+	const tools = toOpenAITools(agentToolDefsForLoop(options.composerMode));
 
 	const conversation: OAIMsg[] = threadToOpenAI(threadMessages, systemContent);
 	let fullContent = '';
@@ -655,7 +699,10 @@ async function runAnthropicLoop(
 	const baseURL = options.requestBaseURL?.trim() || undefined;
 	const client = new Anthropic({ apiKey: key, baseURL: baseURL || undefined });
 	const storedSystem = threadMessages.find((m) => m.role === 'system');
-	const system = composeSystem(storedSystem?.content, options.composerMode, options.agentSystemAppend);
+	const system = appendMcpToolsSystemHint(
+		composeSystem(storedSystem?.content, options.composerMode, options.agentSystemAppend),
+		options.composerMode
+	);
 	const model = options.requestModelId.trim();
 	if (!model) { handlers.onError('模型请求名称为空。'); return; }
 	const temperature = temperatureForMode(options.composerMode);
@@ -663,8 +710,7 @@ async function runAnthropicLoop(
 	const conversation: MessageParam[] = threadToAnthropic(threadMessages);
 	if (conversation.length === 0) { handlers.onError('没有可发送的对话消息。'); return; }
 
-	const toolMode = options.composerMode === 'plan' ? 'plan' : 'agent';
-	const tools = toAnthropicTools(agentToolsForComposerMode(toolMode));
+	const tools = toAnthropicTools(agentToolDefsForLoop(options.composerMode));
 	let fullContent = '';
 	const thinkBudget = anthropicThinkingBudget(options.thinkingLevel ?? 'off');
 	let accUsage: TurnTokenUsage | undefined;

@@ -1,8 +1,197 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { minimatch } from 'minimatch';
-import type { AgentCustomization, AgentCommand, AgentSkill } from '../agentSettingsTypes.js';
+import type { AgentCustomization, AgentCommand, AgentSkill, AgentRule } from '../agentSettingsTypes.js';
 import { collectAtWorkspacePathsInText } from './workspaceContextExpand.js';
+
+const MAX_MARKDOWN_IMPORT_CHARS = 120_000;
+const MAX_SKILL_FILE_CHARS = 80_000;
+
+function readTextFileSafe(fullPath: string, maxChars: number): string {
+	try {
+		if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+			return '';
+		}
+		const t = fs.readFileSync(fullPath, 'utf8');
+		if (t.length > maxChars) {
+			return `${t.slice(0, maxChars)}\n\n… (truncated)`;
+		}
+		return t;
+	} catch {
+		return '';
+	}
+}
+
+/** 简单剥离 `---` YAML frontmatter（与 Claude Code / SKILL.md 习惯对齐） */
+function stripSimpleFrontmatter(md: string): { body: string; title?: string; description?: string } {
+	const t = md.trim();
+	if (!t.startsWith('---')) {
+		return { body: md };
+	}
+	const end = t.indexOf('\n---', 3);
+	if (end < 0) {
+		return { body: md };
+	}
+	const yamlBlock = t.slice(3, end).trim();
+	const body = t.slice(end + 4).trim();
+	const meta: Record<string, string> = {};
+	for (const line of yamlBlock.split('\n')) {
+		const m = line.match(/^([a-zA-Z0-9_-]+)\s*:\s*(.*)$/);
+		if (m) {
+			meta[m[1]!] = (m[2] ?? '').replace(/^["']|["']$/g, '').trim();
+		}
+	}
+	return {
+		body,
+		title: meta.name || meta.title,
+		description: meta.description,
+	};
+}
+
+/** 扫描 `.../<slug>/SKILL.md`（单层子目录） */
+function scanSkillsDirectory(
+	workspaceRoot: string,
+	segments: readonly string[],
+	sourceLabel: string
+): AgentSkill[] {
+	const skillsRoot = path.join(workspaceRoot, ...segments);
+	if (!fs.existsSync(skillsRoot) || !fs.statSync(skillsRoot).isDirectory()) {
+		return [];
+	}
+	const relHint = [...segments, '<slug>', 'SKILL.md'].join('/');
+	const out: AgentSkill[] = [];
+	try {
+		for (const dirName of fs.readdirSync(skillsRoot)) {
+			const skillPath = path.join(skillsRoot, dirName, 'SKILL.md');
+			if (!fs.existsSync(skillPath)) {
+				continue;
+			}
+			const raw = readTextFileSafe(skillPath, MAX_SKILL_FILE_CHARS);
+			if (!raw.trim()) {
+				continue;
+			}
+			const { body, title, description } = stripSimpleFrontmatter(raw);
+			const slug = dirName.trim().toLowerCase();
+			if (!slug) {
+				continue;
+			}
+			out.push({
+				id: `ws-skill-${sourceLabel}:${slug}`,
+				name: title?.trim() || dirName,
+				description:
+					description?.trim() ||
+					`Project skill from ${relHint.replace('<slug>', dirName)}`,
+				slug,
+				content: body.trim(),
+				enabled: true,
+			});
+		}
+	} catch {
+		return out;
+	}
+	return out;
+}
+
+/**
+ * 从工作区加载磁盘技能：`.claude/skills/<slug>/SKILL.md`（Claude Code）与 `.async/skills/<slug>/SKILL.md`（本应用约定）。
+ * 与设置里 Skills 合并时按 slug；**同名 slug 时 `.async` 覆盖 `.claude`**，二者均可覆盖仅来自设置的同名项。
+ */
+export function loadClaudeWorkspaceSkills(workspaceRoot: string | null): AgentSkill[] {
+	if (!workspaceRoot) {
+		return [];
+	}
+	const claude = scanSkillsDirectory(workspaceRoot, ['.claude', 'skills'], 'claude');
+	const asyncShell = scanSkillsDirectory(workspaceRoot, ['.async', 'skills'], 'async');
+	return [...claude, ...asyncShell];
+}
+
+function mergeSkillsBySlug(settingsSkills: AgentSkill[] | undefined, workspaceSkills: AgentSkill[]): AgentSkill[] {
+	const map = new Map<string, AgentSkill>();
+	for (const s of settingsSkills ?? []) {
+		if (s.slug?.trim()) {
+			map.set(s.slug.trim().toLowerCase(), s);
+		}
+	}
+	for (const w of workspaceSkills) {
+		map.set(w.slug.trim().toLowerCase(), w);
+	}
+	return [...map.values()];
+}
+
+/** 读取 `CLAUDE.md`、`.claude/CLAUDE.md` 与 `.claude/rules` 下规则（与 Claude Code 项目约定对齐） */
+export function loadClaudeProjectRulesMarkdown(workspaceRoot: string | null): string {
+	if (!workspaceRoot) {
+		return '';
+	}
+	const parts: string[] = [];
+	for (const rel of ['CLAUDE.md', path.join('.claude', 'CLAUDE.md')]) {
+		const full = path.join(workspaceRoot, rel);
+		const t = readTextFileSafe(full, MAX_MARKDOWN_IMPORT_CHARS).trim();
+		if (t) {
+			parts.push(`**${rel.replace(/\\/g, '/')}**\n${t}`);
+		}
+	}
+	const rulesDir = path.join(workspaceRoot, '.claude', 'rules');
+	if (fs.existsSync(rulesDir) && fs.statSync(rulesDir).isDirectory()) {
+		try {
+			const names = fs.readdirSync(rulesDir);
+			for (const n of names) {
+				if (!/\.(md|mdc)$/i.test(n)) {
+					continue;
+				}
+				const full = path.join(rulesDir, n);
+				const t = readTextFileSafe(full, MAX_MARKDOWN_IMPORT_CHARS).trim();
+				if (t) {
+					parts.push(`**.claude/rules/${n}**\n${t}`);
+				}
+			}
+		} catch {
+			/* skip */
+		}
+	}
+	return parts.join('\n\n---\n\n');
+}
+
+const MANUAL_RULE_RE = /@rule:\s*(?:"([^"]+)"|([a-f0-9-]{36})|([^\s@]+))/gi;
+
+/**
+ * Manual 规则：用户消息中出现 `@rule:"名称"`、`@rule:<uuid>` 或 `@rule:token` 时注入对应规则正文，并从用户消息中移除这些标记。
+ */
+export function applyManualRuleInvocations(
+	text: string,
+	rules: AgentRule[] | undefined
+): { userText: string; manualBlocks: string[] } {
+	const manual = (rules ?? []).filter((r) => r.enabled && r.scope === 'manual');
+	if (!manual.length) {
+		return { userText: text, manualBlocks: [] };
+	}
+
+	function resolveRule(key: string): AgentRule | undefined {
+		const k = key.trim();
+		if (!k) {
+			return undefined;
+		}
+		const lower = k.toLowerCase();
+		return manual.find((r) => r.id === k || r.name.trim().toLowerCase() === lower);
+	}
+
+	const blocks: string[] = [];
+	const userText = text.replace(MANUAL_RULE_RE, (_full, q1: string | undefined, q2: string | undefined, q3: string | undefined) => {
+		const key = (q1 ?? q2 ?? q3 ?? '').trim();
+		const rule = resolveRule(key);
+		if (rule) {
+			blocks.push(`#### Rule（手动 @rule）: ${rule.name}\n${rule.content}`);
+		} else {
+			blocks.push(
+				`#### Rule（手动 @rule）: 未找到匹配项 "${key}"\n（请检查规则 id 或名称是否与设置中 Manual 规则一致。）`
+			);
+		}
+		return ' ';
+	})
+		.replace(/\s{2,}/g, ' ')
+		.trim();
+	return { userText, manualBlocks: blocks };
+}
 
 function escapeRe(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -104,12 +293,14 @@ export function buildAgentSystemAppend(opts: {
 	atPaths: string[];
 	skillSystemBlock: string;
 	thirdPartyRules: string;
+	/** 来自 `@rule:` 的 Manual 规则块（已含标题） */
+	manualRuleBlocks?: string[];
 }): string {
 	const parts: string[] = [];
 	const agent = opts.agent;
 
 	if (opts.thirdPartyRules.trim()) {
-		parts.push(`#### 从项目导入的规则\n${opts.thirdPartyRules.trim()}`);
+		parts.push(`#### 从项目导入的规则（.cursor/rules、CLAUDE.md、.claude/rules）\n${opts.thirdPartyRules.trim()}`);
 	}
 
 	for (const r of agent?.rules ?? []) {
@@ -123,6 +314,12 @@ export function buildAgentSystemAppend(opts: {
 			if (opts.atPaths.some((p) => pathMatchesGlob(p, pat))) {
 				parts.push(`#### Rule（路径匹配）: ${r.name}\n${r.content}`);
 			}
+		}
+	}
+
+	for (const block of opts.manualRuleBlocks ?? []) {
+		if (block.trim()) {
+			parts.push(block.trim());
 		}
 	}
 
@@ -155,18 +352,24 @@ export function prepareUserTurnForChat(
 	workspaceFiles: string[]
 ): PreparedUserTurn {
 	const afterCmd = applySlashCommands(rawText, agent?.commands);
-	const { userText, skillSystemBlock } = applySkillInvocation(afterCmd, agent?.skills);
-	const atPaths = workspaceRoot
-		? collectAtWorkspacePathsInText(userText, workspaceFiles)
-		: [];
-	const thirdParty =
+	const { userText: afterManual, manualBlocks } = applyManualRuleInvocations(afterCmd, agent?.rules);
+	const wsSkills =
+		agent?.importThirdPartyConfigs && workspaceRoot ? loadClaudeWorkspaceSkills(workspaceRoot) : [];
+	const mergedSkills = mergeSkillsBySlug(agent?.skills, wsSkills);
+	const { userText, skillSystemBlock } = applySkillInvocation(afterManual, mergedSkills);
+	const atPaths = workspaceRoot ? collectAtWorkspacePathsInText(userText, workspaceFiles) : [];
+	const cursorRules =
 		agent?.importThirdPartyConfigs && workspaceRoot ? loadThirdPartyAgentRules(workspaceRoot) : '';
+	const claudeRules =
+		agent?.importThirdPartyConfigs && workspaceRoot ? loadClaudeProjectRulesMarkdown(workspaceRoot) : '';
+	const thirdPartyMerged = [cursorRules, claudeRules].filter((s) => s.trim().length > 0).join('\n\n---\n\n');
 	const agentSystemAppend = buildAgentSystemAppend({
 		agent,
 		userText,
 		atPaths,
 		skillSystemBlock,
-		thirdPartyRules: thirdParty,
+		thirdPartyRules: thirdPartyMerged,
+		manualRuleBlocks: manualBlocks,
 	});
 	return { userText, agentSystemAppend, atPaths };
 }

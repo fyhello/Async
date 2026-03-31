@@ -13,6 +13,8 @@ import type { ToolCall, ToolResult } from './agentTools.js';
 import { TsLspSession } from '../lsp/tsLspSession.js';
 import type { AgentLoopOptions, AgentLoopHandlers } from './agentLoop.js';
 import type { ShellSettings } from '../settingsStore.js';
+import { getMcpManager } from '../mcp/index.js';
+import type { McpToolResult } from '../mcp/mcpTypes.js';
 
 /** 工具执行器持有的 LSP 会话引用（由 register.ts 通过 setToolLspSession 注入）。 */
 let _lspSession: TsLspSession | null = null;
@@ -50,6 +52,48 @@ export type ToolExecutionHooks = {
 	beforeWrite?: (snapshot: ToolWriteSnapshot) => void | Promise<void>;
 };
 
+function formatMcpToolResultForAgent(result: McpToolResult): string {
+	const parts: string[] = [];
+	for (const block of result.content ?? []) {
+		if (block.type === 'text' && block.text != null && block.text !== '') {
+			parts.push(block.text);
+		} else if (block.type === 'image') {
+			parts.push(
+				block.data
+					? `[image${block.mimeType ? ` ${block.mimeType}` : ''}, base64 ${Math.min(block.data.length, 64)} chars…]`
+					: '[image]'
+			);
+		} else if (block.type === 'resource') {
+			parts.push('[resource]');
+		} else {
+			parts.push(JSON.stringify(block));
+		}
+	}
+	const text = parts.join('\n\n').trim();
+	return text || '(empty MCP result)';
+}
+
+async function executeMcpAgentTool(call: ToolCall): Promise<ToolResult> {
+	try {
+		const raw = await getMcpManager().callTool(call.name, call.arguments);
+		const content = formatMcpToolResultForAgent(raw);
+		return {
+			toolCallId: call.id,
+			name: call.name,
+			content,
+			isError: !!raw.isError,
+		};
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		return {
+			toolCallId: call.id,
+			name: call.name,
+			content: `MCP tool error: ${msg}`,
+			isError: true,
+		};
+	}
+}
+
 export async function executeTool(call: ToolCall, hooks: ToolExecutionHooks = {}): Promise<ToolResult> {
 	try {
 		switch (call.name) {
@@ -70,6 +114,9 @@ export async function executeTool(call: ToolCall, hooks: ToolExecutionHooks = {}
 		case 'delegate_task':
 			return await executeDelegateTask(call);
 		default:
+			if (getMcpManager().isMcpTool(call.name)) {
+				return await executeMcpAgentTool(call);
+			}
 			return { toolCallId: call.id, name: call.name, content: `Unknown tool: ${call.name}`, isError: true };
 		}
 	} catch (e) {

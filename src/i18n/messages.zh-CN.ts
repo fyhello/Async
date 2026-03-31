@@ -449,11 +449,14 @@ export const messagesZhCN: Record<string, string> = {
 	'thought.totalBlock': '\n\n整段输出耗时约 {{sec}} 秒。',
 
 	// agent settings (Rules / Skills panel)
-	'agentSettings.lead1': '为 Agent 提供领域知识与固定流程：规则注入系统提示；Skills 用 ',
-	'agentSettings.lead2': ' 在输入框触发；Commands 用 ',
+	'agentSettings.lead1':
+		'为 Agent 提供领域知识与固定流程：规则注入系统提示；Manual 规则在消息中写 @rule:规则名 或 @rule:uuid；Skills 用 ',
+	'agentSettings.lead2':
+		' 在输入框触发（项目内 `.claude/skills` 与 `.async/skills` 下各 `<slug>/SKILL.md` 会与设置合并；同名 slug 时 `.async` 优先于 `.claude`）；Commands 用 ',
 	'agentSettings.lead3': ' 展开模板；Subagents 作为可扮演的子角色说明一并注入。',
 	'agentSettings.importTitle': '导入第三方配置',
-	'agentSettings.importDesc': '从当前工作区 .cursor/rules 读取 .md / .mdc 规则并附加到本轮系统上下文。',
+	'agentSettings.importDesc':
+		'开启后从工作区读取：`.cursor/rules`（Cursor）、根目录与 `.claude/CLAUDE.md`、`.claude/rules/*.md`（Claude Code 约定），并附加到本轮系统上下文。',
 	'agentSettings.safetyTitle': '工具与安全',
 	'agentSettings.safetyShellDesc': '关闭后 Agent 将直接执行终端命令（仍有工作区目录限制）。',
 	'agentSettings.safetySkipDesc': '开启时，git status、npm test 等常见命令不再弹窗。',
@@ -462,12 +465,12 @@ export const messagesZhCN: Record<string, string> = {
 	'agentSettings.rulesInfo': '按作用域注入系统提示',
 	'agentSettings.new': '新建',
 	'agentSettings.rulesDesc':
-		'Always：每条对话生效；Glob：当用户消息里 @ 引用的路径匹配 glob（如 **/*.ts）时生效；Manual：预留，当前不注入。',
+		'Always：每条对话生效；Glob：当用户消息里 @ 引用的路径匹配 glob（如 **/*.ts）时生效；Manual：仅当消息中出现 @rule:规则名 或 @rule:uuid 时注入（标记会从正文移除）。',
 	'agentSettings.ruleNameAria': '规则名称',
 	'agentSettings.scope': '作用域',
 	'agentSettings.scopeAlways': 'Always',
 	'agentSettings.scopeGlob': 'Glob（路径匹配）',
-	'agentSettings.scopeManual': 'Manual（暂不注入）',
+	'agentSettings.scopeManual': 'Manual（@rule: 触发）',
 	'agentSettings.globPattern': 'Glob 模式',
 	'agentSettings.ruleBody': '规则正文',
 	'agentSettings.ruleBodyPh': '写给模型的约束与风格…',
@@ -475,7 +478,7 @@ export const messagesZhCN: Record<string, string> = {
 	'agentSettings.skillsTitle': 'Skills',
 	'agentSettings.skillsInfo': '输入框 ./slug 触发',
 	'agentSettings.skillsDesc':
-		'在对话输入以 ./slug 开头（后接说明），会把该 Skill 的说明注入本轮系统提示，用户消息去掉前缀后发给模型。',
+		'在对话输入以 ./slug 开头（后接说明），会把该 Skill 的说明注入本轮系统提示，用户消息去掉前缀后发给模型。磁盘技能路径：`.claude/skills/<slug>/` 或 `.async/skills/<slug>/` 下的 `SKILL.md`（需开启「导入第三方配置」）。',
 	'agentSettings.skillNameAria': 'Skill 名称',
 	'agentSettings.slugLabel': 'slug（不含 ./）',
 	'agentSettings.skillIntro': '简介',

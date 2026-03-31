@@ -439,11 +439,14 @@ export const messagesEn: Record<string, string> = {
 		'{{modeHint}}\n\nFirst-token wait ~{{sec}}s. Richer reasoning may appear here if the gateway supports it.{{total}}',
 	'thought.totalBlock': '\n\nTotal generation time ~{{sec}}s.',
 
-	'agentSettings.lead1': 'Give the agent domain knowledge and workflows: rules go into the system prompt; Skills use ',
-	'agentSettings.lead2': ' in the input; Commands use ',
+	'agentSettings.lead1':
+		'Give the agent domain knowledge: rules in the system prompt; Manual rules via @rule:name or @rule:uuid in the message; Skills use ',
+	'agentSettings.lead2':
+		' in the input (`.claude/skills` and `.async/skills` each use `<slug>/SKILL.md`; merged with settings—on slug clash `.async` overrides `.claude`); Commands use ',
 	'agentSettings.lead3': ' to expand templates; Subagents add role descriptions.',
 	'agentSettings.importTitle': 'Import third-party config',
-	'agentSettings.importDesc': 'Read .md / .mdc from .cursor/rules in the workspace and append to system context.',
+	'agentSettings.importDesc':
+		'When on, loads `.cursor/rules`, root / `.claude/CLAUDE.md`, and `.claude/rules/*.md` from the workspace and appends to system context.',
 	'agentSettings.safetyTitle': 'Tools & safety',
 	'agentSettings.safetyShellDesc': 'When off, the agent runs terminal commands without a prompt (still scoped to the workspace).',
 	'agentSettings.safetySkipDesc': 'When on, common read-only commands like git status or npm test skip the prompt.',
@@ -452,12 +455,12 @@ export const messagesEn: Record<string, string> = {
 	'agentSettings.rulesInfo': 'Inject by scope into system prompt',
 	'agentSettings.new': 'New',
 	'agentSettings.rulesDesc':
-		'Always: every chat. Glob: when @ paths match the pattern (e.g. **/*.ts). Manual: reserved, not injected yet.',
+		'Always: every chat. Glob: when @ paths match (e.g. **/*.ts). Manual: only when the message contains @rule:name or @rule:uuid (markers are stripped from the user text).',
 	'agentSettings.ruleNameAria': 'Rule name',
 	'agentSettings.scope': 'Scope',
 	'agentSettings.scopeAlways': 'Always',
 	'agentSettings.scopeGlob': 'Glob (path match)',
-	'agentSettings.scopeManual': 'Manual (not injected)',
+	'agentSettings.scopeManual': 'Manual (@rule: trigger)',
 	'agentSettings.globPattern': 'Glob pattern',
 	'agentSettings.ruleBody': 'Rule body',
 	'agentSettings.ruleBodyPh': 'Constraints and style for the model…',
@@ -465,7 +468,7 @@ export const messagesEn: Record<string, string> = {
 	'agentSettings.skillsTitle': 'Skills',
 	'agentSettings.skillsInfo': 'Trigger with ./slug in input',
 	'agentSettings.skillsDesc':
-		'Messages starting with ./slug inject that skill into the system prompt; the prefix is stripped from the user message.',
+		'Messages starting with ./slug inject that skill; the prefix is stripped. On-disk: `.claude/skills/<slug>/` or `.async/skills/<slug>/SKILL.md` when third-party import is on.',
 	'agentSettings.skillNameAria': 'Skill name',
 	'agentSettings.slugLabel': 'slug (without ./)',
 	'agentSettings.skillIntro': 'Summary',
