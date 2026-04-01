@@ -1956,8 +1956,12 @@ body {
 	box-sizing: border-box;
 	padding-top: 4px;
 	margin-top: -4px;
-	padding-bottom: 16px;
-	margin-bottom: -6px;
+	/* 勿在气泡下垫高 padding：背景为 void-bg-0，比气泡更暗，会像气泡底部一条黑带 */
+	padding-bottom: 0;
+	margin-bottom: 0;
+	/* 与 .ref-msg-user 同圆角：否则父级方角会在气泡左下/右下露出更深的楔形 */
+	border-radius: 18px;
+	overflow: hidden;
 	background: var(--void-bg-0);
 	box-shadow:
 		0 1px 0 rgba(255, 255, 255, 0.04),
@@ -1996,6 +2000,13 @@ body {
 	font-family: inherit;
 	transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 	box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+	appearance: none;
+	-webkit-appearance: none;
+}
+
+.ref-msg-user::-moz-focus-inner {
+	border: 0;
+	padding: 0;
 }
 
 .ref-msg-user:hover:not(:disabled) {
@@ -3674,6 +3685,11 @@ body {
 
 .ref-composer-rich-input::-webkit-scrollbar-thumb:hover {
 	background: rgba(255, 255, 255, 0.26);
+}
+
+/* 与透明 track 一致：否则继承全局 *::-webkit-scrollbar-corner（深色）会在右下角露出一块方斑 */
+.ref-composer-rich-input::-webkit-scrollbar-corner {
+	background: transparent;
 }
 
 .ref-composer-rich-input:empty:before {
