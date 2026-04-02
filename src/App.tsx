@@ -566,24 +566,6 @@ function IconSettings({ className }: { className?: string }) {
 	);
 }
 
-function IconSidebarLeft({ className }: { className?: string }) {
-	return (
-		<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-			<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-			<line x1="9" y1="3" x2="9" y2="21"></line>
-		</svg>
-	);
-}
-
-function IconSidebarRight({ className }: { className?: string }) {
-	return (
-		<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-			<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-			<line x1="15" y1="3" x2="15" y2="21"></line>
-		</svg>
-	);
-}
-
 function IconHistory({ className }: { className?: string }) {
 	return (
 		<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -768,6 +750,8 @@ export default function App() {
 	const [settingsPageOpen, setSettingsPageOpen] = useState(false);
 	const [settingsInitialNav, setSettingsInitialNav] = useState<SettingsNavId>('general');
 	const [settingsOpenPending, startSettingsOpenTransition] = useTransition();
+	const [layoutSwitchPending, startLayoutSwitchTransition] = useTransition();
+	const [layoutSwitchTarget, setLayoutSwitchTarget] = useState<LayoutMode | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const [plusMenuOpen, setPlusMenuOpen] = useState(false);
 	const [composerMode, setComposerMode] = useState<ComposerMode>(() => readComposerMode());
@@ -2679,14 +2663,27 @@ export default function App() {
 	/** 仅工具栏切换时持久化；打开文件等临时切到 editor 不写偏好 */
 	const pickShellLayoutMode = useCallback(
 		(next: LayoutMode) => {
-			setLayoutMode(next);
-			writeStoredShellLayoutMode(next);
-			if (shell) {
-				void shell.invoke('settings:set', { ui: { layoutMode: next } });
+			if (next === layoutMode) {
+				setLayoutSwitchTarget(null);
+				return;
 			}
+			setLayoutSwitchTarget(next);
+			startLayoutSwitchTransition(() => {
+				setLayoutMode(next);
+				writeStoredShellLayoutMode(next);
+				if (shell) {
+					void shell.invoke('settings:set', { ui: { layoutMode: next } });
+				}
+			});
 		},
-		[shell]
+		[layoutMode, shell]
 	);
+
+	useEffect(() => {
+		if (!layoutSwitchPending) {
+			setLayoutSwitchTarget(null);
+		}
+	}, [layoutSwitchPending]);
 
 	const persistSettings = useCallback(async () => {
 		if (!shell) {
@@ -2752,6 +2749,17 @@ export default function App() {
 			setSettingsPageOpen(false);
 		}
 	}, [persistSettings]);
+
+	const switchLayoutModeFromSettings = useCallback(
+		async (next: LayoutMode) => {
+			if (next === layoutMode) {
+				return;
+			}
+			await closeSettingsPage();
+			pickShellLayoutMode(next);
+		},
+		[closeSettingsPage, layoutMode, pickShellLayoutMode]
+	);
 
 	const startSkillCreatorFlow = useCallback(async () => {
 		await closeSettingsPage();
@@ -5347,28 +5355,10 @@ export default function App() {
 					</button>
 				</div>
 				<div className="ref-menubar-right">
-					<div className="ref-layout-toggle-btns">
-						<button
-							type="button"
-							className={`ref-layout-btn ${layoutMode === 'agent' ? 'is-active' : ''}`}
-							onClick={() => pickShellLayoutMode('agent')}
-							title="Agent Layout"
-						>
-							<IconSidebarLeft />
-						</button>
-						<button
-							type="button"
-							className={`ref-layout-btn ${layoutMode === 'editor' ? 'is-active' : ''}`}
-							onClick={() => pickShellLayoutMode('editor')}
-							title="Editor Layout"
-						>
-							<IconSidebarRight />
-						</button>
-					</div>
 					<button
 						type="button"
 						className="ref-icon-tile ref-settings-btn"
-						onClick={() => openSettingsPage('models')}
+						onClick={() => openSettingsPage('general')}
 						title={t('app.settings')}
 						aria-label={t('app.settingsAria')}
 					>
@@ -6371,11 +6361,26 @@ export default function App() {
 								onDeleteWorkspaceSkillDisk={handleDeleteWorkspaceSkillDisk}
 								colorMode={colorMode}
 								onChangeColorMode={(m, origin) => void onChangeColorMode(m, origin)}
+								layoutMode={layoutMode}
+								onChangeLayoutMode={(next) => void switchLayoutModeFromSettings(next)}
 							/>
 						</Suspense>
 					</div>
 				</div>
 			</Activity>
+
+			{layoutSwitchPending && layoutSwitchTarget === 'editor' ? (
+				<div className="ref-layout-switch-loading" role="status" aria-live="polite">
+					<div className="ref-layout-switch-loading-card">
+						<BrandLogo className="ref-layout-switch-loading-logo" size={34} />
+						<div className="ref-layout-switch-loading-copy">
+							<strong>{t('app.switchingToEditor')}</strong>
+							<span>{t('app.switchingToEditorHint')}</span>
+						</div>
+						<span className="ref-layout-switch-loading-spinner" aria-hidden />
+					</div>
+				</div>
+			) : null}
 
 			<ComposerPlusMenu
 				open={plusMenuOpen}

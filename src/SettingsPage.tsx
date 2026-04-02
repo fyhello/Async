@@ -39,6 +39,8 @@ export type SettingsNavId =
 	| 'beta'
 	| 'dev';
 
+type ShellLayoutMode = 'agent' | 'editor';
+
 type NavItem = { id: SettingsNavId; label: string; badge?: number; soon?: boolean };
 
 function navItemsForT(t: (key: string) => string): NavItem[] {
@@ -214,6 +216,8 @@ type Props = {
 	workspaceOpen: boolean;
 	colorMode: AppColorMode;
 	onChangeColorMode: (next: AppColorMode, origin?: ThemeTransitionOrigin) => void | Promise<void>;
+	layoutMode: ShellLayoutMode;
+	onChangeLayoutMode: (next: ShellLayoutMode) => void | Promise<void>;
 };
 
 export function SettingsPage({
@@ -247,6 +251,8 @@ export function SettingsPage({
 	workspaceOpen,
 	colorMode,
 	onChangeColorMode,
+	layoutMode,
+	onChangeLayoutMode,
 }: Props) {
 	const { t, locale, setLocale } = useI18n();
 	const navItems = useMemo(() => navItemsForT(t), [t]);
@@ -529,6 +535,22 @@ export function SettingsPage({
 										options={[
 											{ value: 'zh-CN', label: t('settings.languageZh') },
 											{ value: 'en', label: t('settings.languageEn') },
+										]}
+									/>
+								</div>
+								<div className="ref-settings-field ref-settings-field--language">
+									<span>{t('settings.layoutMode')}</span>
+									<p className="ref-settings-proxy-hint">{t('settings.layoutModeHint')}</p>
+									<VoidSelect
+										ariaLabel={t('settings.layoutMode')}
+										value={layoutMode}
+										onChange={(next) => {
+											const mode = next === 'editor' ? 'editor' : 'agent';
+											void onChangeLayoutMode(mode);
+										}}
+										options={[
+											{ value: 'agent', label: t('settings.layoutModeAgent') },
+											{ value: 'editor', label: t('settings.layoutModeEditor') },
 										]}
 									/>
 								</div>

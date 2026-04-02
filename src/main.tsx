@@ -13,6 +13,9 @@ import './styles/mac-codex.css';
 const initialScheme = resolveEffectiveScheme(readStoredColorMode(), readPrefersDark());
 document.documentElement.setAttribute('data-ui-style', APP_UI_STYLE);
 document.documentElement.setAttribute('data-color-scheme', initialScheme);
+const platformRaw = navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
+const platform = /win/i.test(platformRaw) ? 'win32' : /mac/i.test(platformRaw) ? 'darwin' : 'linux';
+document.documentElement.setAttribute('data-platform', platform);
 
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
@@ -21,3 +24,13 @@ createRoot(document.getElementById('root')!).render(
 		</I18nProvider>
 	</StrictMode>
 );
+
+const bootSplash = document.getElementById('boot-splash');
+if (bootSplash) {
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => {
+			bootSplash.classList.add('is-hidden');
+			window.setTimeout(() => bootSplash.remove(), 320);
+		});
+	});
+}

@@ -1,9 +1,9 @@
 :root[data-ui-style='mac-codex'][data-color-scheme='light'] {
 	color-scheme: light;
-	--void-bg-0: #eef2f8;
-	--void-bg-1: #fbfcfe;
-	--void-bg-2: #f3f6fb;
-	--void-bg-3: #e5ebf5;
+	--void-bg-0: #e8edf5;
+	--void-bg-1: #f5f7fb;
+	--void-bg-2: #edf2f8;
+	--void-bg-3: #dfe6f0;
 	--void-fg-0: #18202e;
 	--void-fg-1: #354055;
 	--void-fg-2: #5f6d86;
@@ -25,24 +25,31 @@
 	--void-scrollbar-thumb: rgba(123, 137, 160, 0.38);
 	--void-scrollbar-thumb-hover: rgba(98, 113, 139, 0.5);
 	--void-scrollbar-thumb-active: rgba(82, 96, 120, 0.58);
-	--ref-menubar-chrome-bg: rgba(246, 248, 252, 0.78);
-	--void-sidebar-fill: rgba(251, 252, 254, 0.7);
+	--ref-menubar-chrome-bg: rgba(240, 244, 250, 0.86);
+	--void-sidebar-fill: rgba(245, 247, 251, 0.78);
 	--void-shadow-card: 0 24px 72px rgba(31, 45, 72, 0.14);
 	--void-shadow-soft: inset 0 1px 0 rgba(255, 255, 255, 0.78);
 
-	--surface-panel-bg: rgba(251, 252, 254, 0.8);
-	--surface-panel-bg-strong: rgba(246, 248, 252, 0.9);
-	--surface-panel-bg-soft: rgba(243, 246, 251, 0.82);
+	--surface-panel-bg: rgba(245, 247, 251, 0.84);
+	--surface-panel-bg-strong: rgba(239, 243, 249, 0.92);
+	--surface-panel-bg-soft: rgba(234, 239, 247, 0.88);
 	--surface-glass-stroke: rgba(102, 120, 149, 0.14);
 	--surface-tint-soft: rgba(65, 142, 255, 0.08);
 	--surface-tint-strong: rgba(65, 142, 255, 0.13);
-	--surface-search-bg: rgba(243, 246, 251, 0.78);
+	--surface-search-bg: rgba(236, 241, 248, 0.84);
 	--shadow-floating: 0 24px 70px rgba(31, 45, 72, 0.14);
 	--shadow-toolbar: 0 1px 0 rgba(255, 255, 255, 0.82), 0 16px 42px rgba(31, 45, 72, 0.12);
 	--shadow-pressed: inset 0 1px 0 rgba(255, 255, 255, 0.84);
+	--surface-popover-bg: rgba(244, 247, 252, 0.95);
+	--surface-control-bg: rgba(235, 240, 247, 0.94);
+	--surface-control-bg-hover: rgba(228, 235, 245, 0.96);
+	--surface-control-bg-active: rgba(219, 229, 242, 0.98);
+	--surface-code-bg: rgba(243, 247, 252, 0.96);
+	--surface-card-bg: linear-gradient(180deg, rgba(243, 246, 251, 0.96) 0%, rgba(236, 241, 248, 0.96) 100%);
+	--surface-card-bg-soft: linear-gradient(180deg, rgba(237, 242, 249, 0.96) 0%, rgba(231, 237, 246, 0.96) 100%);
 	--app-backdrop:
-		radial-gradient(circle at top center, rgba(65, 142, 255, 0.12) 0%, transparent 34%),
-		radial-gradient(circle at 10% 18%, rgba(56, 189, 248, 0.09) 0%, transparent 22%),
-		radial-gradient(circle at 86% 12%, rgba(167, 139, 250, 0.1) 0%, transparent 24%),
-		linear-gradient(180deg, #f6f8fc 0%, #eef2f8 48%, #ebeff7 100%);
+		radial-gradient(circle at top center, rgba(65, 142, 255, 0.1) 0%, transparent 34%),
+		radial-gradient(circle at 10% 18%, rgba(56, 189, 248, 0.08) 0%, transparent 22%),
+		radial-gradient(circle at 86% 12%, rgba(167, 139, 250, 0.08) 0%, transparent 24%),
+		linear-gradient(180deg, #f0f4fa 0%, #e8edf5 48%, #e4eaf3 100%);
 }

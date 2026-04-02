@@ -184,6 +184,26 @@
 	background-size: 200% 100%;
 }
 
+:root[data-ui-style='mac-codex'] .ref-layout-switch-loading {
+	background: rgba(6, 8, 12, 0.44);
+	backdrop-filter: blur(18px) saturate(125%);
+	-webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+:root[data-ui-style='mac-codex'] .ref-layout-switch-loading-card {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 94%, transparent) 0%, color-mix(in srgb, var(--surface-panel-bg-soft) 92%, transparent) 100%);
+	border-color: color-mix(in srgb, var(--surface-glass-stroke) 88%, transparent);
+	box-shadow:
+		0 22px 56px rgba(0, 0, 0, 0.18),
+		inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+}
+
+:root[data-ui-style='mac-codex'] .ref-layout-switch-loading-spinner {
+	border-color: color-mix(in srgb, var(--surface-glass-stroke) 90%, transparent);
+	border-top-color: var(--color-accent);
+}
+
 :root[data-ui-style='mac-codex'] .ref-settings-icon-btn,
 :root[data-ui-style='mac-codex'] .ref-settings-nav-row {
 	border: 1px solid transparent;
@@ -939,6 +959,26 @@
 	background-size: 200% 100%;
 }
 
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-layout-switch-loading {
+	background: rgba(4, 6, 9, 0.52);
+	backdrop-filter: blur(20px) saturate(120%);
+	-webkit-backdrop-filter: blur(20px) saturate(120%);
+}
+
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-layout-switch-loading-card {
+	background:
+		linear-gradient(180deg, rgba(27, 35, 42, 0.96) 0%, rgba(21, 27, 33, 0.96) 100%);
+	border-color: rgba(205, 217, 224, 0.08);
+	box-shadow:
+		0 20px 52px rgba(0, 0, 0, 0.3),
+		inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-layout-switch-loading-spinner {
+	border-color: rgba(205, 217, 224, 0.12);
+	border-top-color: rgba(55, 214, 212, 0.95);
+}
+
 :root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-quick-open-backdrop {
 	background:
 		radial-gradient(circle at top center, rgba(55, 214, 212, 0.12) 0%, transparent 28%),
@@ -1230,6 +1270,77 @@
 	padding: 10px 12px;
 	border-bottom: 1px solid var(--surface-glass-stroke);
 	background: color-mix(in srgb, var(--surface-panel-bg-soft) 88%, transparent);
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-tab-bar {
+	padding: 0 8px;
+	gap: 6px;
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-tab-item {
+	margin: 5px 0 0;
+	max-width: 240px;
+	border-right-color: color-mix(in srgb, var(--surface-glass-stroke) 72%, transparent);
+	border-radius: 12px 12px 0 0;
+	color: var(--color-text-tertiary);
+	background: transparent;
+	transition:
+		background 160ms ease,
+		border-color 160ms ease,
+		box-shadow 160ms ease,
+		color 160ms ease;
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-tab-item:hover {
+	background: color-mix(in srgb, var(--surface-control-bg-hover) 78%, transparent);
+	color: var(--color-text-secondary);
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-tab-item.is-active {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 92%, var(--surface-tint-soft)) 0%, color-mix(in srgb, var(--surface-code-bg) 94%, transparent) 100%);
+	border-right-color: color-mix(in srgb, var(--surface-glass-stroke) 64%, transparent);
+	color: var(--color-text-primary);
+	box-shadow:
+		inset 0 2px 0 color-mix(in srgb, var(--color-accent) 84%, white 16%),
+		inset 0 0 0 1px color-mix(in srgb, var(--surface-glass-stroke) 68%, var(--color-accent) 16%);
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-tab-close {
+	border-radius: 8px;
+	color: var(--color-text-tertiary);
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-tab-close:hover {
+	background: color-mix(in srgb, var(--surface-control-bg-hover) 86%, transparent);
+	color: var(--color-text-primary);
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-editor-terminal-tab {
+	border-bottom-width: 0;
+	border-radius: 10px 10px 0 0;
+	margin: 4px 0 0;
+	padding-bottom: 1px;
+	transition:
+		background 160ms ease,
+		box-shadow 160ms ease,
+		color 160ms ease;
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-editor-terminal-tab:hover {
+	background: color-mix(in srgb, var(--surface-control-bg-hover) 72%, transparent);
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-editor-terminal-tab.is-active {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 90%, var(--surface-tint-soft)) 0%, color-mix(in srgb, var(--surface-panel-bg-soft) 78%, transparent) 100%);
+	box-shadow:
+		inset 0 2px 0 color-mix(in srgb, var(--color-accent) 84%, white 16%),
+		inset 0 0 0 1px color-mix(in srgb, var(--surface-glass-stroke) 64%, var(--color-accent) 18%);
+}
+
+:root[data-ui-style='mac-codex'] .ref-center--editor-shell .ref-editor-terminal-tab.is-active .ref-editor-terminal-tab-main {
+	color: var(--color-text-primary);
 }
 
 :root[data-ui-style='mac-codex'] .ref-editor-canvas,
