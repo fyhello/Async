@@ -110,27 +110,25 @@
 
 :root[data-ui-style='mac-codex'] .ref-settings-backdrop {
 	background:
-		radial-gradient(circle at top center, color-mix(in srgb, var(--color-accent) 16%, transparent) 0%, transparent 30%),
-		rgba(6, 8, 12, 0.42);
-	backdrop-filter: blur(24px) saturate(130%);
-	-webkit-backdrop-filter: blur(24px) saturate(130%);
+		radial-gradient(circle at top center, color-mix(in srgb, var(--surface-tint-soft) 34%, transparent) 0%, transparent 26%),
+		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 98%, transparent) 0%, color-mix(in srgb, var(--surface-panel-bg) 96%, transparent) 100%);
 }
 
 :root[data-ui-style='mac-codex'] .ref-settings-mount {
-	padding: 22px;
-	align-items: center;
-	justify-content: center;
+	padding: 0;
+	align-items: stretch;
+	justify-content: stretch;
 }
 
 :root[data-ui-style='mac-codex'] .ref-settings-root {
-	width: min(1420px, calc(100vw - 44px));
-	height: min(920px, calc(100vh - 44px));
-	max-height: calc(100vh - 44px);
-	border-radius: var(--radius-window);
-	border: 1px solid var(--surface-glass-stroke);
+	width: 100%;
+	height: 100%;
+	max-height: none;
+	border-radius: 0;
+	border: none;
 	background:
-		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 96%, transparent) 0%, color-mix(in srgb, var(--surface-panel-bg) 94%, transparent) 100%);
-	box-shadow: 0 30px 100px rgba(0, 0, 0, 0.28);
+		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 98%, transparent) 0%, color-mix(in srgb, var(--surface-panel-bg) 96%, transparent) 100%);
+	box-shadow: none;
 	overflow: hidden;
 }
 
@@ -151,6 +149,39 @@
 	background:
 		radial-gradient(circle at top center, var(--surface-tint-soft) 0%, transparent 36%),
 		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 92%, transparent) 0%, color-mix(in srgb, var(--surface-panel-bg) 88%, transparent) 100%);
+}
+
+:root[data-ui-style='mac-codex'] .ref-settings-nav-loading,
+:root[data-ui-style='mac-codex'] .ref-settings-open-loading {
+	color: var(--color-text-secondary);
+}
+
+:root[data-ui-style='mac-codex'] .ref-settings-open-loading {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 94%, transparent) 0%, color-mix(in srgb, var(--surface-panel-bg-soft) 92%, transparent) 100%);
+	border-color: color-mix(in srgb, var(--surface-glass-stroke) 88%, transparent);
+	box-shadow:
+		0 18px 42px rgba(0, 0, 0, 0.16),
+		inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+}
+
+:root[data-ui-style='mac-codex'] .ref-settings-nav-loading-spinner,
+:root[data-ui-style='mac-codex'] .ref-settings-open-loading-spinner {
+	border-color: color-mix(in srgb, var(--surface-glass-stroke) 90%, transparent);
+	border-top-color: var(--color-accent);
+}
+
+:root[data-ui-style='mac-codex'] .ref-settings-skeleton-card {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--surface-panel-bg-strong) 90%, transparent) 0%, color-mix(in srgb, var(--surface-panel-bg-soft) 84%, transparent) 100%);
+	border-color: color-mix(in srgb, var(--surface-glass-stroke) 86%, transparent);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 4%, transparent);
+}
+
+:root[data-ui-style='mac-codex'] .ref-settings-skeleton-line {
+	background:
+		linear-gradient(90deg, color-mix(in srgb, var(--surface-panel-bg-soft) 88%, transparent) 0%, color-mix(in srgb, var(--color-text-primary) 10%, transparent) 50%, color-mix(in srgb, var(--surface-panel-bg-soft) 88%, transparent) 100%);
+	background-size: 200% 100%;
 }
 
 :root[data-ui-style='mac-codex'] .ref-settings-icon-btn,
@@ -855,17 +886,15 @@
 
 :root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-backdrop {
 	background:
-		radial-gradient(circle at top center, rgba(55, 214, 212, 0.12) 0%, transparent 28%),
-		radial-gradient(circle at 86% 10%, rgba(255, 157, 89, 0.08) 0%, transparent 20%),
-		rgba(4, 6, 9, 0.52);
-	backdrop-filter: blur(22px) saturate(120%);
-	-webkit-backdrop-filter: blur(22px) saturate(120%);
+		radial-gradient(circle at top center, rgba(55, 214, 212, 0.08) 0%, transparent 26%),
+		radial-gradient(circle at 86% 10%, rgba(255, 157, 89, 0.05) 0%, transparent 18%),
+		linear-gradient(180deg, rgba(15, 20, 25, 0.995) 0%, rgba(11, 15, 19, 0.995) 100%);
 }
 
 :root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-root {
-	background: linear-gradient(180deg, rgba(20, 27, 33, 0.988) 0%, rgba(14, 19, 24, 0.988) 100%);
-	border-color: rgba(205, 217, 224, 0.08);
-	box-shadow: 0 32px 96px rgba(0, 0, 0, 0.4);
+	background: linear-gradient(180deg, rgba(20, 27, 33, 0.995) 0%, rgba(14, 19, 24, 0.995) 100%);
+	border-color: transparent;
+	box-shadow: none;
 }
 
 :root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-sidebar {
@@ -880,6 +909,34 @@
 		radial-gradient(circle at top center, rgba(55, 214, 212, 0.05) 0%, transparent 34%),
 		radial-gradient(circle at 84% 14%, rgba(255, 157, 89, 0.04) 0%, transparent 18%),
 		linear-gradient(180deg, rgba(21, 28, 34, 0.98) 0%, rgba(17, 23, 28, 0.98) 100%);
+}
+
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-open-loading {
+	background:
+		linear-gradient(180deg, rgba(27, 35, 42, 0.96) 0%, rgba(21, 27, 33, 0.96) 100%);
+	border-color: rgba(205, 217, 224, 0.08);
+	box-shadow:
+		0 18px 44px rgba(0, 0, 0, 0.28),
+		inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-nav-loading-spinner,
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-open-loading-spinner {
+	border-color: rgba(205, 217, 224, 0.12);
+	border-top-color: rgba(55, 214, 212, 0.95);
+}
+
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-skeleton-card {
+	background:
+		linear-gradient(180deg, rgba(25, 33, 40, 0.96) 0%, rgba(19, 25, 31, 0.96) 100%);
+	border-color: rgba(205, 217, 224, 0.06);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+:root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-settings-skeleton-line {
+	background:
+		linear-gradient(90deg, rgba(35, 45, 54, 0.9) 0%, rgba(83, 95, 108, 0.35) 50%, rgba(35, 45, 54, 0.9) 100%);
+	background-size: 200% 100%;
 }
 
 :root[data-ui-style='mac-codex'][data-color-scheme='dark'] .ref-quick-open-backdrop {

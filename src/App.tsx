@@ -1,11 +1,15 @@
 import {
+	Activity,
 	Fragment,
+	Suspense,
+	lazy,
 	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
+	useTransition,
 	type ReactNode,
 } from 'react';
 import type { editor as MonacoEditorNS } from 'monaco-editor';
@@ -45,7 +49,7 @@ import {
 import { mergeAgentFileChangesWithGit } from './agentFileChangesFromGit';
 import { ModelPickerDropdown, type ModelPickerItem } from './ModelPickerDropdown';
 import { VoidSelect } from './VoidSelect';
-import { SettingsPage, type SettingsNavId } from './SettingsPage';
+import type { SettingsNavId } from './SettingsPage';
 import { useAppColorScheme } from './useAppColorScheme';
 import {
 	type AppColorMode,
@@ -127,6 +131,8 @@ import { registerTsLspMonacoOnce } from './tsLspMonaco';
 import { monacoWorkspaceRootRef } from './tsLspWorkspaceRef';
 import { workspaceRelativeFileUrl } from './workspaceUri';
 import { voidShellDebugLog } from './tabCloseDebug';
+
+const SettingsPage = lazy(() => import('./SettingsPage').then((m) => ({ default: m.SettingsPage })));
 type ProjectAgentSliceState = {
 	rules: AgentRule[];
 	skills: AgentSkill[];
@@ -760,8 +766,8 @@ export default function App() {
 	const [commitMsg, setCommitMsg] = useState('');
 	const [lastTurnUsage, setLastTurnUsage] = useState<TurnTokenUsage | null>(null);
 	const [settingsPageOpen, setSettingsPageOpen] = useState(false);
-	const [settingsMountKey, setSettingsMountKey] = useState(0);
 	const [settingsInitialNav, setSettingsInitialNav] = useState<SettingsNavId>('general');
+	const [settingsOpenPending, startSettingsOpenTransition] = useTransition();
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const [plusMenuOpen, setPlusMenuOpen] = useState(false);
 	const [composerMode, setComposerMode] = useState<ComposerMode>(() => readComposerMode());
@@ -1032,9 +1038,10 @@ export default function App() {
 	const openSettingsPage = (nav: SettingsNavId) => {
 		setModelPickerOpen(false);
 		setPlusMenuOpen(false);
-		setSettingsMountKey((k) => k + 1);
-		setSettingsInitialNav(nav);
-		setSettingsPageOpen(true);
+		startSettingsOpenTransition(() => {
+			setSettingsInitialNav(nav);
+			setSettingsPageOpen(true);
+		});
 	};
 
 	const workspaceBasename = useMemo(() => {
@@ -6322,45 +6329,53 @@ export default function App() {
 				t={t}
 			/>
 
-			{settingsPageOpen ? (
+			<Activity mode={settingsPageOpen || settingsOpenPending ? 'visible' : 'hidden'}>
 				<div className="ref-settings-backdrop" role="presentation" onClick={() => void closeSettingsPage()}>
 					<div className="ref-settings-mount" onClick={(e) => e.stopPropagation()}>
-						<SettingsPage
-							key={settingsMountKey}
-							initialNav={settingsInitialNav}
-							onClose={() => void closeSettingsPage()}
-							defaultModel={defaultModel}
-							modelProviders={modelProviders}
-							modelEntries={modelEntries}
-							onChangeModelProviders={onChangeModelProviders}
-							onChangeModelEntries={onChangeModelEntries}
-							onPickDefaultModel={(id) => void onPickDefaultModel(id)}
-							agentCustomization={mergedAgentCustomization}
-							onChangeAgentCustomization={onChangeMergedAgentCustomization}
-							editorSettings={editorSettings}
-							onChangeEditorSettings={setEditorSettings}
-							onPersistLanguage={(loc) => void onPersistLanguage(loc)}
-							indexingSettings={indexingSettings}
-							onChangeIndexingSettings={setIndexingSettings}
-							onPersistIndexingPatch={onPersistIndexingPatch}
-							mcpServers={mcpServers}
-							onChangeMcpServers={setMcpServers}
-							mcpStatuses={mcpStatuses}
-							onRefreshMcpStatuses={onRefreshMcpStatuses}
-							onStartMcpServer={onStartMcpServer}
-							onStopMcpServer={onStopMcpServer}
-							onRestartMcpServer={onRestartMcpServer}
-							shell={shell ?? null}
-							workspaceOpen={!!workspace}
-							onOpenSkillCreator={startSkillCreatorFlow}
-							onOpenWorkspaceSkillFile={handleOpenWorkspaceSkillFile}
-							onDeleteWorkspaceSkillDisk={handleDeleteWorkspaceSkillDisk}
-							colorMode={colorMode}
-							onChangeColorMode={(m, origin) => void onChangeColorMode(m, origin)}
-						/>
+						<Suspense
+							fallback={
+								<div className="ref-settings-open-loading" role="status" aria-live="polite">
+									<span className="ref-settings-open-loading-spinner" aria-hidden />
+									<span>{t('common.loading')}</span>
+								</div>
+							}
+						>
+							<SettingsPage
+								initialNav={settingsInitialNav}
+								onClose={() => void closeSettingsPage()}
+								defaultModel={defaultModel}
+								modelProviders={modelProviders}
+								modelEntries={modelEntries}
+								onChangeModelProviders={onChangeModelProviders}
+								onChangeModelEntries={onChangeModelEntries}
+								onPickDefaultModel={(id) => void onPickDefaultModel(id)}
+								agentCustomization={mergedAgentCustomization}
+								onChangeAgentCustomization={onChangeMergedAgentCustomization}
+								editorSettings={editorSettings}
+								onChangeEditorSettings={setEditorSettings}
+								onPersistLanguage={(loc) => void onPersistLanguage(loc)}
+								indexingSettings={indexingSettings}
+								onChangeIndexingSettings={setIndexingSettings}
+								onPersistIndexingPatch={onPersistIndexingPatch}
+								mcpServers={mcpServers}
+								onChangeMcpServers={setMcpServers}
+								mcpStatuses={mcpStatuses}
+								onRefreshMcpStatuses={onRefreshMcpStatuses}
+								onStartMcpServer={onStartMcpServer}
+								onStopMcpServer={onStopMcpServer}
+								onRestartMcpServer={onRestartMcpServer}
+								shell={shell ?? null}
+								workspaceOpen={!!workspace}
+								onOpenSkillCreator={startSkillCreatorFlow}
+								onOpenWorkspaceSkillFile={handleOpenWorkspaceSkillFile}
+								onDeleteWorkspaceSkillDisk={handleDeleteWorkspaceSkillDisk}
+								colorMode={colorMode}
+								onChangeColorMode={(m, origin) => void onChangeColorMode(m, origin)}
+							/>
+						</Suspense>
 					</div>
 				</div>
-			) : null}
+			</Activity>
 
 			<ComposerPlusMenu
 				open={plusMenuOpen}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useState, useTransition } from 'react';
 import {
 	createEmptyUserLlmProvider,
 	createEmptyUserModel,
@@ -8,16 +8,18 @@ import {
 } from './modelCatalog';
 import { LLM_PROVIDER_OPTIONS, type ModelRequestParadigm } from './llmProvider';
 import type { AgentCustomization } from './agentSettingsTypes';
-import { SettingsAgentPanel } from './SettingsAgentPanel';
-import { EditorSettingsPanel, type EditorSettings } from './EditorSettingsPanel';
-import { SettingsIndexingPanel } from './SettingsIndexingPanel';
-import { SettingsMcpPanel } from './SettingsMcpPanel';
-import { SettingsAppearancePanel } from './SettingsAppearancePanel';
+import type { EditorSettings } from './EditorSettingsPanel';
 import type { AppColorMode, ThemeTransitionOrigin } from './colorMode';
 import type { McpServerConfig, McpServerStatus } from './mcpTypes';
 import type { IndexingSettingsState } from './indexingSettingsTypes';
 import { useI18n, type AppLocale } from './i18n';
 import { VoidSelect } from './VoidSelect';
+
+const SettingsAgentPanel = lazy(() => import('./SettingsAgentPanel').then((m) => ({ default: m.SettingsAgentPanel })));
+const EditorSettingsPanel = lazy(() => import('./EditorSettingsPanel').then((m) => ({ default: m.EditorSettingsPanel })));
+const SettingsIndexingPanel = lazy(() => import('./SettingsIndexingPanel').then((m) => ({ default: m.SettingsIndexingPanel })));
+const SettingsMcpPanel = lazy(() => import('./SettingsMcpPanel').then((m) => ({ default: m.SettingsMcpPanel })));
+const SettingsAppearancePanel = lazy(() => import('./SettingsAppearancePanel').then((m) => ({ default: m.SettingsAppearancePanel })));
 
 export type SettingsNavId =
 	| 'general'
@@ -157,6 +159,25 @@ function navIcon(id: SettingsNavId) {
 	}
 }
 
+function SettingsPanelSkeleton() {
+	return (
+		<div className="ref-settings-skeleton" aria-hidden>
+			<div className="ref-settings-skeleton-line ref-settings-skeleton-line--title" />
+			<div className="ref-settings-skeleton-card">
+				<div className="ref-settings-skeleton-line ref-settings-skeleton-line--short" />
+				<div className="ref-settings-skeleton-line" />
+				<div className="ref-settings-skeleton-line" />
+				<div className="ref-settings-skeleton-line ref-settings-skeleton-line--short" />
+			</div>
+			<div className="ref-settings-skeleton-card">
+				<div className="ref-settings-skeleton-line ref-settings-skeleton-line--medium" />
+				<div className="ref-settings-skeleton-line" />
+				<div className="ref-settings-skeleton-line ref-settings-skeleton-line--short" />
+			</div>
+		</div>
+	);
+}
+
 type Props = {
 	onClose: () => void;
 	initialNav: SettingsNavId;
@@ -231,7 +252,9 @@ export function SettingsPage({
 	const navItems = useMemo(() => navItemsForT(t), [t]);
 	const [nav, setNav] = useState<SettingsNavId>(initialNav);
 	const [search, setSearch] = useState('');
+	const deferredSearch = useDeferredValue(search);
 	const [sidebarWidth, setSidebarWidth] = useState(() => readSettingsSidebarWidth());
+	const [navPending, startNavTransition] = useTransition();
 
 	const beginResizeSidebar = useCallback((e: React.MouseEvent) => {
 		e.preventDefault();
@@ -273,6 +296,13 @@ export function SettingsPage({
 	}, []);
 
 	useEffect(() => {
+		startNavTransition(() => {
+			setNav(initialNav);
+			setSearch('');
+		});
+	}, [initialNav, startNavTransition]);
+
+	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') {
 				onClose();
@@ -289,7 +319,7 @@ export function SettingsPage({
 	}, []);
 
 	const filteredProviders = useMemo(() => {
-		const q = search.trim().toLowerCase();
+		const q = deferredSearch.trim().toLowerCase();
 		if (!q) {
 			return modelProviders;
 		}
@@ -306,12 +336,12 @@ export function SettingsPage({
 				return dn.includes(q) || rn.includes(q);
 			});
 		});
-	}, [modelProviders, modelEntries, search, t]);
+	}, [deferredSearch, modelEntries, modelProviders, t]);
 
 	const modelsVisibleUnderProvider = useCallback(
 		(provider: UserLlmProvider) => {
 			const all = modelEntries.filter((m) => m.providerId === provider.id);
-			const q = search.trim().toLowerCase();
+			const q = deferredSearch.trim().toLowerCase();
 			if (!q) {
 				return all;
 			}
@@ -327,7 +357,7 @@ export function SettingsPage({
 				return dn.includes(q) || rn.includes(q);
 			});
 		},
-		[modelEntries, search, t]
+		[deferredSearch, modelEntries, t]
 	);
 
 	const patchProvider = useCallback(
@@ -415,7 +445,9 @@ export function SettingsPage({
 									) {
 										return;
 									}
-									setNav(item.id);
+									startNavTransition(() => {
+										setNav(item.id);
+									});
 								}}
 								disabled={!!item.soon}
 							>
@@ -466,6 +498,12 @@ export function SettingsPage({
 									? t('settings.title.comingSoon')
 									: null}
 							</h1>
+							{navPending ? (
+								<div className="ref-settings-nav-loading" role="status" aria-live="polite">
+									<span className="ref-settings-nav-loading-spinner" aria-hidden />
+									<span>{t('common.loading')}</span>
+								</div>
+							) : null}
 						</div>
 
 						{nav === 'general' ? (
@@ -498,7 +536,9 @@ export function SettingsPage({
 						) : null}
 
 						{nav === 'appearance' ? (
-							<SettingsAppearancePanel value={colorMode} onChange={onChangeColorMode} />
+							<Suspense fallback={<SettingsPanelSkeleton />}>
+								<SettingsAppearancePanel value={colorMode} onChange={onChangeColorMode} />
+							</Suspense>
 						) : null}
 
 						{nav === 'models' ? (
@@ -691,40 +731,48 @@ export function SettingsPage({
 						) : null}
 
 						{nav === 'rules' ? (
-							<SettingsAgentPanel
-								value={agentCustomization}
-								onChange={onChangeAgentCustomization}
-								workspaceOpen={workspaceOpen}
-								onOpenSkillCreator={onOpenSkillCreator}
-								onOpenWorkspaceSkillFile={onOpenWorkspaceSkillFile}
-								onDeleteWorkspaceSkillDisk={onDeleteWorkspaceSkillDisk}
-							/>
+							<Suspense fallback={<SettingsPanelSkeleton />}>
+								<SettingsAgentPanel
+									value={agentCustomization}
+									onChange={onChangeAgentCustomization}
+									workspaceOpen={workspaceOpen}
+									onOpenSkillCreator={onOpenSkillCreator}
+									onOpenWorkspaceSkillFile={onOpenWorkspaceSkillFile}
+									onDeleteWorkspaceSkillDisk={onDeleteWorkspaceSkillDisk}
+								/>
+							</Suspense>
 						) : null}
 
 						{nav === 'editor' ? (
-							<EditorSettingsPanel value={editorSettings} onChange={onChangeEditorSettings} />
+							<Suspense fallback={<SettingsPanelSkeleton />}>
+								<EditorSettingsPanel value={editorSettings} onChange={onChangeEditorSettings} />
+							</Suspense>
 						) : null}
 
 						{nav === 'indexing' ? (
-							<SettingsIndexingPanel
-								value={indexingSettings}
-								onChange={onChangeIndexingSettings}
-								onPersistPatch={onPersistIndexingPatch}
-								shell={shell}
-								workspaceOpen={workspaceOpen}
-							/>
+							<Suspense fallback={<SettingsPanelSkeleton />}>
+								<SettingsIndexingPanel
+									value={indexingSettings}
+									onChange={onChangeIndexingSettings}
+									onPersistPatch={onPersistIndexingPatch}
+									shell={shell}
+									workspaceOpen={workspaceOpen}
+								/>
+							</Suspense>
 						) : null}
 
 						{nav === 'tools' ? (
-							<SettingsMcpPanel
-								servers={mcpServers}
-								statuses={mcpStatuses}
-								onChangeServers={onChangeMcpServers}
-								onRefreshStatuses={onRefreshMcpStatuses}
-								onStartServer={onStartMcpServer}
-								onStopServer={onStopMcpServer}
-								onRestartServer={onRestartMcpServer}
-							/>
+							<Suspense fallback={<SettingsPanelSkeleton />}>
+								<SettingsMcpPanel
+									servers={mcpServers}
+									statuses={mcpStatuses}
+									onChangeServers={onChangeMcpServers}
+									onRefreshStatuses={onRefreshMcpStatuses}
+									onStartServer={onStartMcpServer}
+									onStopServer={onStopMcpServer}
+									onRestartServer={onRestartMcpServer}
+								/>
+							</Suspense>
 						) : null}
 
 						{nav !== 'general' &&
