@@ -1,7 +1,13 @@
 /** 富文本输入：内联文件 chip + @ 提及的 DOM 工具（contenteditable） */
 
 import { fileTypeIconHtmlForRelPath } from './fileTypeIcons';
-import { CREATE_SKILL_SLUG, CREATE_SKILL_WIRE, newSegmentId, type ComposerSegment } from './composerSegments';
+import {
+	isSlashCommandId,
+	newSegmentId,
+	SLASH_COMMAND_WIRE,
+	type ComposerSegment,
+	type SlashCommandId,
+} from './composerSegments';
 
 const CHIP_CLASS = 'ref-inline-file-chip';
 export const SLASH_CMD_CLASS = 'ref-inline-slash-chip';
@@ -229,17 +235,21 @@ export function createFileChipElement(relPath: string, segId: string, h: FileChi
 	return span;
 }
 
-export function createSlashCommandChipElement(segId: string, h: FileChipDomHandlers): HTMLElement {
+export function createSlashCommandChipElement(
+	segId: string,
+	command: SlashCommandId,
+	h: FileChipDomHandlers
+): HTMLElement {
 	const span = document.createElement('span');
 	span.contentEditable = 'false';
 	span.dataset.segId = segId;
-	span.dataset.voidSlash = CREATE_SKILL_SLUG;
+	span.dataset.voidSlash = command;
 	span.className = SLASH_CMD_CLASS;
 	span.setAttribute('role', 'presentation');
 
 	const label = document.createElement('span');
 	label.className = 'ref-inline-slash-chip-label';
-	label.textContent = CREATE_SKILL_WIRE;
+	label.textContent = SLASH_COMMAND_WIRE[command];
 
 	const btn = document.createElement('button');
 	btn.type = 'button';
@@ -364,12 +374,12 @@ export function readSegmentsFromRoot(root: HTMLElement): ComposerSegment[] {
 			return;
 		}
 		const e = n as HTMLElement;
-		if (e.classList.contains(SLASH_CMD_CLASS) && e.dataset.voidSlash === CREATE_SKILL_SLUG) {
+		if (e.classList.contains(SLASH_CMD_CLASS) && e.dataset.voidSlash && isSlashCommandId(e.dataset.voidSlash)) {
 			flush();
 			out.push({
 				id: e.dataset.segId || newSegmentId(),
 				kind: 'command',
-				command: CREATE_SKILL_SLUG,
+				command: e.dataset.voidSlash,
 			});
 			return;
 		}
@@ -453,8 +463,8 @@ export function writeSegmentsToRoot(
 				}
 				root.appendChild(document.createTextNode(parts[i]!));
 			}
-		} else if (s.kind === 'command' && s.command === CREATE_SKILL_SLUG) {
-			root.appendChild(createSlashCommandChipElement(s.id, h));
+		} else if (s.kind === 'command' && isSlashCommandId(s.command)) {
+			root.appendChild(createSlashCommandChipElement(s.id, s.command, h));
 		} else if (s.kind === 'file') {
 			root.appendChild(createFileChipElement(s.path, s.id, h));
 		}

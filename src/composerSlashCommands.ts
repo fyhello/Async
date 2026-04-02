@@ -1,4 +1,6 @@
+import type { AgentCommand } from './agentSettingsTypes';
 import type { SlashCommandId } from './composerSegments';
+import type { TFunction } from './i18n';
 
 export type BuiltinSlashCommand = {
 	id: string;
@@ -9,10 +11,21 @@ export type BuiltinSlashCommand = {
 	insert: { type: 'chip'; chip: SlashCommandId } | { type: 'text'; text: string };
 };
 
-/** 菜单行（已解析 description） */
-export type SlashMenuRowItem = BuiltinSlashCommand & { label: string; description: string };
+/** 合并后菜单项（内置 + 用户设置） */
+export type SlashMenuEntry = {
+	id: string;
+	/** 小写，用于过滤匹配 */
+	name: string;
+	descriptionKey?: string;
+	descriptionLiteral?: string;
+	insert: BuiltinSlashCommand['insert'];
+	source: 'builtin' | 'user';
+};
 
-/** 内置斜杠命令（可后续从设置里的 Commands 合并） */
+/** 菜单行（已解析 description） */
+export type SlashMenuRowItem = SlashMenuEntry & { label: string; description: string };
+
+/** 内置斜杠命令 */
 export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
 	{
 		id: 'create-skill',
@@ -24,15 +37,88 @@ export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
 		id: 'create-rule',
 		name: 'create-rule',
 		descriptionKey: 'slashCmd.createRuleDesc',
-		insert: { type: 'text', text: '/create-rule ' },
+		insert: { type: 'chip', chip: 'create-rule' },
 	},
 	{
 		id: 'create-subagent',
 		name: 'create-subagent',
 		descriptionKey: 'slashCmd.createSubagentDesc',
-		insert: { type: 'text', text: '/create-subagent ' },
+		insert: { type: 'chip', chip: 'create-subagent' },
 	},
 ];
+
+/** 内置 name（小写）集合；同名时内置优先 */
+const builtinNameKeys = () => new Set(BUILTIN_SLASH_COMMANDS.map((b) => b.name.toLowerCase()));
+
+/** 将设置中的 Commands 转为菜单项（排除与内置同名的 slash） */
+export function agentCommandsToSlashMenuEntries(commands: AgentCommand[] | undefined): SlashMenuEntry[] {
+	if (!commands?.length) {
+		return [];
+	}
+	const taken = builtinNameKeys();
+	const out: SlashMenuEntry[] = [];
+	for (const c of commands) {
+		const raw = c.slash.trim().replace(/^\//, '');
+		if (!raw) {
+			continue;
+		}
+		const key = raw.toLowerCase();
+		if (taken.has(key)) {
+			continue;
+		}
+		taken.add(key);
+		const desc = (c.description ?? '').trim();
+		const lit = desc || (c.name ?? '').trim() || undefined;
+		out.push({
+			id: `user-${c.id}`,
+			name: key,
+			descriptionLiteral: lit,
+			insert: { type: 'text', text: `/${raw} ` },
+			source: 'user',
+		});
+	}
+	return out;
+}
+
+export function mergeSlashMenuEntries(userCommands: AgentCommand[] | undefined): SlashMenuEntry[] {
+	const builtins: SlashMenuEntry[] = BUILTIN_SLASH_COMMANDS.map((b) => ({
+		id: b.id,
+		name: b.name.toLowerCase(),
+		descriptionKey: b.descriptionKey,
+		insert: b.insert,
+		source: 'builtin' as const,
+	}));
+	return [...builtins, ...agentCommandsToSlashMenuEntries(userCommands)];
+}
+
+export function filterSlashMenuEntries(entries: SlashMenuEntry[], query: string): SlashMenuEntry[] {
+	const q = query.trim().toLowerCase();
+	if (!q) {
+		return [...entries];
+	}
+	return entries.filter((c) => {
+		const n = c.name;
+		const desc = (c.descriptionLiteral ?? '').toLowerCase();
+		const hay = `${n} ${c.id} ${desc}`;
+		return n.startsWith(q) || hay.includes(q);
+	});
+}
+
+/** 解析 label（展示用） */
+export function slashMenuEntryLabel(entry: SlashMenuEntry): string {
+	if (entry.insert.type === 'text') {
+		return entry.insert.text.replace(/\s+$/u, '');
+	}
+	return `/${entry.name}`;
+}
+
+export function resolveSlashMenuRow(entry: SlashMenuEntry, t: TFunction): SlashMenuRowItem {
+	return {
+		...entry,
+		label: slashMenuEntryLabel(entry),
+		description: entry.descriptionKey ? t(entry.descriptionKey) : (entry.descriptionLiteral ?? ''),
+	};
+}
 
 /**
  * 首段为 `/...` 且光标仍在「命令名」内（未到空格后的参数区）时返回查询词（不含 /）。
@@ -60,6 +146,7 @@ export function getLeadingSlashCommandQuery(
 	return afterSlash;
 }
 
+/** @deprecated 使用 mergeSlashMenuEntries + filterSlashMenuEntries */
 export function filterSlashCommands(commands: BuiltinSlashCommand[], query: string): BuiltinSlashCommand[] {
 	const q = query.trim().toLowerCase();
 	if (!q) {
@@ -89,4 +176,18 @@ export function findSlashCommandTokenRanges(text: string): Array<{ start: number
 export function isKnownBuiltinSlashToken(token: string): boolean {
 	const name = token.startsWith('/') ? token.slice(1) : token;
 	return BUILTIN_SLASH_COMMANDS.some((c) => c.name === name);
+}
+
+/** 供设置页「可用斜杠命令」只读列表 */
+export type SlashCommandListRow = {
+	label: string;
+	description: string;
+	source: 'builtin' | 'user';
+};
+
+export function buildSlashCommandListRows(userCommands: AgentCommand[] | undefined, t: TFunction): SlashCommandListRow[] {
+	return mergeSlashMenuEntries(userCommands).map((e) => {
+		const row = resolveSlashMenuRow(e, t);
+		return { label: row.label, description: row.description, source: e.source };
+	});
 }

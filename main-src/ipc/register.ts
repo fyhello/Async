@@ -84,6 +84,16 @@ import {
 	type SkillCreatorScope,
 } from '../skillCreatorPrompt.js';
 import {
+	buildRuleCreatorSystemAppend,
+	formatRuleCreatorUserBubble,
+} from '../ruleCreatorPrompt.js';
+import {
+	buildSubagentCreatorSystemAppend,
+	formatSubagentCreatorUserBubble,
+	type SubagentCreatorScope,
+} from '../subagentCreatorPrompt.js';
+import type { AgentRuleScope } from '../agentSettingsTypes.js';
+import {
 	mergeAgentWithProjectSlice,
 	readWorkspaceAgentProjectSlice,
 	writeWorkspaceAgentProjectSlice,
@@ -908,6 +918,8 @@ export function registerIpc(): void {
 				mode?: string;
 				modelId?: string;
 				skillCreator?: { userNote: string; scope: SkillCreatorScope };
+				ruleCreator?: { userNote: string; ruleScope: AgentRuleScope; globPattern?: string };
+				subagentCreator?: { userNote: string; scope: SubagentCreatorScope };
 				/** Plan Build：完整计划写入系统上下文，可见用户气泡仅短触发语 */
 				planExecute?: { fromAbsPath?: string; inlineMarkdown?: string; planTitle?: string };
 			}
@@ -946,6 +958,110 @@ export function registerIpc(): void {
 				let finalSystemAppend = prepared.agentSystemAppend
 					? `${prepared.agentSystemAppend}\n\n---\n\n${skillBlock}`
 					: skillBlock;
+				if (root && (mode === 'plan' || mode === 'ask')) {
+					const wsLine = `## Current workspace\nWorkspace root (absolute): \`${root.replace(/\\/g, '/')}\`\nUser file references with \`@\` are relative to this root.`;
+					finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${wsLine}` : wsLine;
+				}
+				if ((mode === 'plan' || mode === 'ask') && workspaceFiles.length > 0) {
+					const tree = buildWorkspaceTreeSummary(workspaceFiles);
+					if (tree) {
+						finalSystemAppend = finalSystemAppend
+							? `${finalSystemAppend}\n\n---\n${tree}`
+							: tree;
+					}
+				}
+				if (modeExpandsWorkspaceFileContext(mode) && prepared.userText.trim().length > 8) {
+					const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
+					const enrichedQuery = buildEnrichedQuery(
+						prepared.userText,
+						getThread(threadId)?.messages ?? []
+					);
+					const sem = buildSemanticContextBlock(
+						enrichedQuery,
+						6,
+						recentPaths,
+						prepared.atPaths.length > 0 ? prepared.atPaths : undefined
+					);
+					if (sem) {
+						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
+					}
+				}
+				if (modeExpandsWorkspaceFileContext(mode) && root && settings.indexing?.gitContextEnabled !== false) {
+					const gitBlock = await getGitContextBlock(root);
+					if (gitBlock) {
+						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
+					}
+				}
+				finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute);
+				const t = appendMessage(threadId, { role: 'user', content: visible });
+				runChatStream(win, threadId, t.messages, mode, modelSelection, finalSystemAppend);
+				return { ok: true as const };
+			}
+
+			const ruleIn = payload.ruleCreator;
+			if (ruleIn && typeof ruleIn.userNote === 'string') {
+				const ruleScope: AgentRuleScope =
+					ruleIn.ruleScope === 'glob' || ruleIn.ruleScope === 'manual' ? ruleIn.ruleScope : 'always';
+				const prepared = prepareUserTurnForChat(ruleIn.userNote, agentForTurn, root, workspaceFiles);
+				const lang = settings.language === 'en' ? 'en' : 'zh-CN';
+				const visible = formatRuleCreatorUserBubble(ruleScope, ruleIn.globPattern, lang, ruleIn.userNote);
+				const ruleBlock = buildRuleCreatorSystemAppend(ruleScope, ruleIn.globPattern, lang, root);
+				let finalSystemAppend = prepared.agentSystemAppend
+					? `${prepared.agentSystemAppend}\n\n---\n\n${ruleBlock}`
+					: ruleBlock;
+				if (root && (mode === 'plan' || mode === 'ask')) {
+					const wsLine = `## Current workspace\nWorkspace root (absolute): \`${root.replace(/\\/g, '/')}\`\nUser file references with \`@\` are relative to this root.`;
+					finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${wsLine}` : wsLine;
+				}
+				if ((mode === 'plan' || mode === 'ask') && workspaceFiles.length > 0) {
+					const tree = buildWorkspaceTreeSummary(workspaceFiles);
+					if (tree) {
+						finalSystemAppend = finalSystemAppend
+							? `${finalSystemAppend}\n\n---\n${tree}`
+							: tree;
+					}
+				}
+				if (modeExpandsWorkspaceFileContext(mode) && prepared.userText.trim().length > 8) {
+					const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
+					const enrichedQuery = buildEnrichedQuery(
+						prepared.userText,
+						getThread(threadId)?.messages ?? []
+					);
+					const sem = buildSemanticContextBlock(
+						enrichedQuery,
+						6,
+						recentPaths,
+						prepared.atPaths.length > 0 ? prepared.atPaths : undefined
+					);
+					if (sem) {
+						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
+					}
+				}
+				if (modeExpandsWorkspaceFileContext(mode) && root && settings.indexing?.gitContextEnabled !== false) {
+					const gitBlock = await getGitContextBlock(root);
+					if (gitBlock) {
+						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
+					}
+				}
+				finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute);
+				const t = appendMessage(threadId, { role: 'user', content: visible });
+				runChatStream(win, threadId, t.messages, mode, modelSelection, finalSystemAppend);
+				return { ok: true as const };
+			}
+
+			const subIn = payload.subagentCreator;
+			if (subIn && typeof subIn.userNote === 'string') {
+				const scope: SubagentCreatorScope = subIn.scope === 'project' ? 'project' : 'user';
+				if (scope === 'project' && !root) {
+					return { ok: false as const, error: 'no-workspace' as const };
+				}
+				const prepared = prepareUserTurnForChat(subIn.userNote, agentForTurn, root, workspaceFiles);
+				const lang = settings.language === 'en' ? 'en' : 'zh-CN';
+				const visible = formatSubagentCreatorUserBubble(scope, lang, subIn.userNote);
+				const subBlock = buildSubagentCreatorSystemAppend(scope, lang, root);
+				let finalSystemAppend = prepared.agentSystemAppend
+					? `${prepared.agentSystemAppend}\n\n---\n\n${subBlock}`
+					: subBlock;
 				if (root && (mode === 'plan' || mode === 'ask')) {
 					const wsLine = `## Current workspace\nWorkspace root (absolute): \`${root.replace(/\\/g, '/')}\`\nUser file references with \`@\` are relative to this root.`;
 					finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${wsLine}` : wsLine;

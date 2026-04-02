@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { AgentCommand } from './agentSettingsTypes';
 import type { TFunction } from './i18n';
 import {
-	BUILTIN_SLASH_COMMANDS,
-	filterSlashCommands,
+	filterSlashMenuEntries,
 	getLeadingSlashCommandQuery,
+	mergeSlashMenuEntries,
+	resolveSlashMenuRow,
 	type SlashMenuRowItem,
 } from './composerSlashCommands';
-import { CREATE_SKILL_SLUG, newSegmentId, type ComposerSegment } from './composerSegments';
+import { isSlashCommandId, newSegmentId, type ComposerSegment } from './composerSegments';
 import { snapshotDomRect, type CaretRectSnapshot } from './caretRectSnapshot';
 import { getCaretRectFromRichRoot, readSegmentsFromRoot, textBeforeCaretForAt } from './composerRichDom';
 import type { AtComposerSlot } from './useComposerAtMention';
@@ -20,7 +22,7 @@ type RichRefs = {
 export function useComposerSlashCommand(
 	getSegmentsSetter: (slot: AtComposerSlot) => React.Dispatch<React.SetStateAction<ComposerSegment[]>>,
 	richRefs: RichRefs,
-	opts: { t: TFunction }
+	opts: { t: TFunction; userCommands?: AgentCommand[] }
 ) {
 	const slashSlotRef = useRef<AtComposerSlot>('bottom');
 	const [slashOpen, setSlashOpen] = useState(false);
@@ -29,14 +31,15 @@ export function useComposerSlashCommand(
 	const [slashCaretRect, setSlashCaretRect] = useState<CaretRectSnapshot | null>(null);
 	const lastSlashQueryRef = useRef('');
 
+	const mergedEntries = useMemo(
+		() => mergeSlashMenuEntries(opts.userCommands),
+		[opts.userCommands]
+	);
+
 	const items = useMemo(() => {
-		const filtered = filterSlashCommands(BUILTIN_SLASH_COMMANDS, slashQuery);
-		return filtered.map((c) => ({
-			...c,
-			label: `/${c.name}`,
-			description: opts.t(c.descriptionKey),
-		}));
-	}, [slashQuery, opts.t]);
+		const filtered = filterSlashMenuEntries(mergedEntries, slashQuery);
+		return filtered.map((c) => resolveSlashMenuRow(c, opts.t));
+	}, [mergedEntries, slashQuery, opts.t]);
 
 	const itemsRef = useRef(items);
 	const hiRef = useRef(slashHighlight);
@@ -183,9 +186,9 @@ export function useComposerSlashCommand(
 			const cmdLen = cmdTok ? cmdTok[0]!.length : 1;
 			const tail = t.slice(cmdLen);
 			const setSeg = getSegmentsSetter(slashSlotRef.current);
-			if (picked.insert.type === 'chip' && picked.insert.chip === CREATE_SKILL_SLUG) {
+			if (picked.insert.type === 'chip' && isSlashCommandId(picked.insert.chip)) {
 				setSeg([
-					{ id: newSegmentId(), kind: 'command', command: CREATE_SKILL_SLUG },
+					{ id: newSegmentId(), kind: 'command', command: picked.insert.chip },
 					{ id: newSegmentId(), kind: 'text', text: tail.replace(/^\s+/, '') },
 				]);
 			} else if (picked.insert.type === 'text') {

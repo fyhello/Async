@@ -39,6 +39,8 @@ export type AgentSubagent = {
 export type AgentCommand = {
 	id: string;
 	name: string;
+	/** 斜杠菜单与命令列表说明（可选） */
+	description?: string;
 	slash: string;
 	body: string;
 };

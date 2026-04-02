@@ -3676,10 +3676,11 @@ body {
 .ref-followup-bar-row {
 	display: flex;
 	flex-direction: row;
-	align-items: center;
+	/* stretch：左/中/右同高，再在各自 flex 容器内 align-items:center，避免 Editor 侧中间文字与右侧模型条视觉上偏上 */
+	align-items: stretch;
 	flex-wrap: nowrap;
 	gap: 4px 8px;
-	min-height: 40px;
+	min-height: 42px;
 }
 
 .ref-followup-bar-row .ref-capsule-bar-start,
@@ -3691,28 +3692,48 @@ body {
 	flex-shrink: 0;
 	flex-wrap: nowrap;
 	min-width: 0;
+	display: flex;
 	align-items: center;
-	align-self: center;
+	align-self: stretch;
 }
 
 .ref-followup-input-shell {
 	flex: 1 1 0;
 	min-width: 0;
-	min-height: 0;
 	max-width: 100%;
+	align-self: stretch;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
 }
 
 .ref-followup-input-body {
-	gap: 0;
 	margin: 0;
 	padding: 0;
+	width: 100%;
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
 }
 
-/* ?? .ref-composer-rich-input ???? follow-up ????????????????? */
+/* follow-up：中间列在整行高度内垂直居中；对称 padding，占位符与正文字号/行高一致 */
+.ref-capsule--followup-bar .ref-composer-rich-wrap {
+	width: 100%;
+	min-width: 0;
+}
+
 .ref-capsule--followup-bar .ref-composer-rich-input.ref-followup-rich-input {
+	box-sizing: border-box;
+	width: 100%;
 	min-height: 34px;
 	max-height: 132px;
-	padding: 6px 2px 6px 4px;
+	/* 略加重上内边距，抵消 contenteditable 首行基线偏上的观感 */
+	padding: 8px 10px 5px;
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+.ref-capsule--followup-bar .ref-composer-rich-input.ref-followup-rich-input:empty:before {
 	font-size: 13px;
 	line-height: 1.45;
 }
@@ -3721,7 +3742,6 @@ body {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	align-self: center;
 }
 
 .ref-capsule--followup-bar .ref-plus-btn {
@@ -3778,6 +3798,19 @@ body {
 	border-radius: 16px;
 	padding: 12px 14px 10px;
 	box-shadow: 0 20px 64px rgba(0, 0, 0, 0.42);
+}
+
+/* 首屏/堆叠胶囊：对称 padding + 占位符行高与正文一致，减轻「贴顶」感 */
+.ref-capsule--stacked-chat .ref-composer-rich-input.ref-capsule-input--stacked-chat {
+	box-sizing: border-box;
+	min-height: 72px;
+	padding: 16px 12px;
+	line-height: 1.55;
+}
+
+.ref-capsule--stacked-chat .ref-composer-rich-input.ref-capsule-input--stacked-chat:empty:before {
+	font-size: 13px;
+	line-height: 1.55;
 }
 
 .ref-capsule--inline-edit {
@@ -4406,6 +4439,78 @@ body {
 	background: var(--void-bg-1);
 	color: var(--void-fg-3);
 	border: 1px solid var(--void-border-soft);
+}
+
+.ref-slash-help-head {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--void-fg-1);
+	padding: 6px 8px 8px;
+	border-bottom: 1px solid var(--void-border-soft);
+	margin-bottom: 4px;
+}
+
+.ref-slash-help-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-height: min(42vh, 320px);
+	overflow-y: auto;
+	padding: 2px 4px 6px;
+}
+
+.ref-slash-help-empty {
+	font-size: 12px;
+	color: var(--void-fg-3);
+	padding: 12px 8px;
+	text-align: center;
+}
+
+.ref-slash-help-row {
+	padding: 8px 6px;
+	border-radius: 6px;
+}
+
+.ref-slash-help-row-label {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	font-size: 12px;
+}
+
+.ref-slash-help-row-label code {
+	font-size: 12px;
+	color: var(--void-fg-0);
+	background: var(--void-bg-1);
+	padding: 2px 6px;
+	border-radius: 4px;
+	border: 1px solid var(--void-border-soft);
+}
+
+.ref-slash-help-badge {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--void-fg-3);
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--void-bg-1);
+	border: 1px solid var(--void-border-soft);
+}
+
+.ref-slash-help-badge--user {
+	color: #22d3ee;
+	border-color: rgba(34, 211, 238, 0.35);
+}
+
+.ref-slash-help-row-desc {
+	font-size: 11px;
+	color: var(--void-fg-3);
+	line-height: 1.45;
+	margin: 4px 0 0;
+	padding-left: 2px;
 }
 
 .ref-capsule--compact {
@@ -7043,6 +7148,74 @@ select.ref-settings-native-select:focus {
 	line-height: 1.5;
 }
 
+.ref-settings-agent-subheading {
+	margin: 0 0 8px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--void-fg-1);
+}
+
+.ref-settings-agent-slash-help {
+	margin: 0 0 18px;
+	padding: 12px 14px;
+	border-radius: 10px;
+	border: 1px solid var(--void-border-soft);
+	background: rgba(0, 0, 0, 0.12);
+}
+
+.ref-settings-agent-slash-help-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.ref-settings-agent-slash-help-item {
+	font-size: 12px;
+}
+
+.ref-settings-agent-slash-help-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.ref-settings-agent-slash-help-code {
+	font-size: 12px;
+	color: var(--void-fg-0);
+	background: var(--void-bg-2);
+	padding: 2px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--void-border-soft);
+}
+
+.ref-settings-agent-slash-help-badge {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--void-fg-3);
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--void-bg-2);
+	border: 1px solid var(--void-border-soft);
+}
+
+.ref-settings-agent-slash-help-badge--user {
+	color: #22d3ee;
+	border-color: rgba(34, 211, 238, 0.35);
+}
+
+.ref-settings-agent-slash-help-desc {
+	margin: 6px 0 0;
+	font-size: 11px;
+	color: var(--void-fg-3);
+	line-height: 1.45;
+}
+
 .ref-settings-agent-list {
 	list-style: none;
 	margin: 0;
@@ -8166,6 +8339,8 @@ select.ref-settings-native-select:focus {
 .ref-skill-scope-foot {
 	display: flex;
 	justify-content: flex-end;
+	align-items: center;
+	gap: 10px;
 	padding: 8px 16px 12px;
 }
 
@@ -8186,6 +8361,15 @@ select.ref-settings-native-select:focus {
 
 .ref-skill-scope-btn--ghost:hover {
 	color: #ccc;
+}
+
+.ref-skill-scope-btn--primary {
+	background: #0ea5e9;
+	color: #fff;
+}
+
+.ref-skill-scope-btn--primary:hover {
+	filter: brightness(1.08);
 }
 
 /* ??? Plan Review Panel ??? */

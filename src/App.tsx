@@ -59,6 +59,8 @@ import { ComposerSlashMenu } from './ComposerSlashMenu';
 import { ComposerRichInput } from './ComposerRichInput';
 import { PlanQuestionDialog } from './PlanQuestionDialog';
 import { SkillScopeDialog } from './SkillScopeDialog';
+import { RuleWizardDialog } from './RuleWizardDialog';
+import { SubagentScopeDialog } from './SubagentScopeDialog';
 import { ToolApprovalInlineCard } from './ToolApprovalCard';
 import { AgentMistakeLimitDialog } from './AgentMistakeLimitDialog';
 import { PlanReviewPanel } from './PlanReviewPanel';
@@ -74,12 +76,13 @@ import {
 } from './planParser';
 import {
 	CREATE_SKILL_SLUG,
-	isCreateSkillComposerTurn,
+	getLeadingWizardCommand,
 	newSegmentId,
 	segmentsToWireText,
 	segmentsTrimmedEmpty,
 	userMessageToSegments,
 	type ComposerSegment,
+	type SlashCommandId,
 } from './composerSegments';
 import { getAtMentionRange } from './composerAtMention';
 import { textBeforeCaretForAt } from './composerRichDom';
@@ -93,6 +96,7 @@ import {
 	mergeSkillsBySlug,
 	type AgentCustomization,
 	type AgentRule,
+	type AgentRuleScope,
 	type AgentSkill,
 	type AgentSubagent,
 } from './agentSettingsTypes';
@@ -740,8 +744,9 @@ export default function App() {
 	const [planQuestionRequestId, setPlanQuestionRequestId] = useState<string | null>(null);
 	/** 用户在某线程对「当前最后一条助手消息」点了跳过，切回该线程时不再自动弹出同一题 */
 	const planQuestionDismissedByThreadRef = useRef(new Map<string, string>());
-	/** /create-skill 发送前：选择 Skill 适用范围 */
-	const [skillScopePending, setSkillScopePending] = useState<{
+	/** /create-skill | /create-rule | /create-subagent 发送前向导 */
+	const [wizardPending, setWizardPending] = useState<{
+		kind: SlashCommandId;
 		tailSegments: ComposerSegment[];
 		targetThreadId: string;
 	} | null>(null);
@@ -1266,6 +1271,141 @@ export default function App() {
 				void loadMessages(targetThreadId);
 				if (r?.error === 'no-workspace') {
 					window.alert(t('skillCreator.sendErrorNoWs'));
+				}
+				return;
+			}
+			void refreshThreads();
+		},
+		[
+			shell,
+			currentId,
+			composerMode,
+			defaultModel,
+			t,
+			loadMessages,
+			clearAgentReviewForThread,
+			clearStreamingToolPreviewNow,
+			resetLiveAgentBlocks,
+			refreshThreads,
+		]
+	);
+
+	const executeRuleWizardSend = useCallback(
+		async (
+			ruleScope: AgentRuleScope,
+			globPattern: string | undefined,
+			pending: { tailSegments: ComposerSegment[]; targetThreadId: string }
+		) => {
+			if (!shell) {
+				return;
+			}
+			const { tailSegments, targetThreadId } = pending;
+			const tailWire = segmentsToWireText(tailSegments).trim();
+			const headKey =
+				ruleScope === 'always'
+					? 'ruleWizard.bubbleHeadAlways'
+					: ruleScope === 'glob'
+						? 'ruleWizard.bubbleHeadGlob'
+						: 'ruleWizard.bubbleHeadManual';
+			const head = t(headKey);
+			const globLine =
+				ruleScope === 'glob' && globPattern?.trim()
+					? t('ruleWizard.globLine', { pattern: globPattern.trim() })
+					: '';
+			const visible = [head, globLine, tailWire].filter((x) => x.length > 0).join('\n');
+
+			if (targetThreadId !== currentId) {
+				await shell.invoke('threads:select', targetThreadId);
+				setCurrentId(targetThreadId);
+				await loadMessages(targetThreadId);
+			}
+			clearAgentReviewForThread(targetThreadId);
+			setComposerSegments([]);
+			setStreaming('');
+			setStreamingThinking('');
+			clearStreamingToolPreviewNow();
+			resetLiveAgentBlocks();
+			firstTokenAtRef.current = null;
+			streamStartedAtRef.current = Date.now();
+			streamThreadRef.current = targetThreadId;
+			setAwaitingReply(true);
+			setMessages((m) => [...m, { role: 'user', content: visible }]);
+
+			const r = (await shell.invoke('chat:send', {
+				threadId: targetThreadId,
+				text: '',
+				mode: composerMode,
+				modelId: defaultModel,
+				ruleCreator: {
+					userNote: tailWire,
+					ruleScope,
+					...(ruleScope === 'glob' && globPattern?.trim() ? { globPattern: globPattern.trim() } : {}),
+				},
+			})) as { ok?: boolean; error?: string };
+
+			if (!r?.ok) {
+				setAwaitingReply(false);
+				streamStartedAtRef.current = null;
+				void loadMessages(targetThreadId);
+				return;
+			}
+			void refreshThreads();
+		},
+		[
+			shell,
+			currentId,
+			composerMode,
+			defaultModel,
+			t,
+			loadMessages,
+			clearAgentReviewForThread,
+			clearStreamingToolPreviewNow,
+			resetLiveAgentBlocks,
+			refreshThreads,
+		]
+	);
+
+	const executeSubagentWizardSend = useCallback(
+		async (scope: 'user' | 'project', pending: { tailSegments: ComposerSegment[]; targetThreadId: string }) => {
+			if (!shell) {
+				return;
+			}
+			const { tailSegments, targetThreadId } = pending;
+			const tailWire = segmentsToWireText(tailSegments).trim();
+			const head = scope === 'project' ? t('subagentWizard.bubbleHeadProject') : t('subagentWizard.bubbleHeadAll');
+			const visible = tailWire ? `${head}\n${tailWire}` : head;
+
+			if (targetThreadId !== currentId) {
+				await shell.invoke('threads:select', targetThreadId);
+				setCurrentId(targetThreadId);
+				await loadMessages(targetThreadId);
+			}
+			clearAgentReviewForThread(targetThreadId);
+			setComposerSegments([]);
+			setStreaming('');
+			setStreamingThinking('');
+			clearStreamingToolPreviewNow();
+			resetLiveAgentBlocks();
+			firstTokenAtRef.current = null;
+			streamStartedAtRef.current = Date.now();
+			streamThreadRef.current = targetThreadId;
+			setAwaitingReply(true);
+			setMessages((m) => [...m, { role: 'user', content: visible }]);
+
+			const r = (await shell.invoke('chat:send', {
+				threadId: targetThreadId,
+				text: '',
+				mode: composerMode,
+				modelId: defaultModel,
+				subagentCreator: { userNote: tailWire, scope },
+			})) as { ok?: boolean; error?: string };
+
+			if (!r?.ok) {
+				setAwaitingReply(false);
+				streamStartedAtRef.current = null;
+				void loadMessages(targetThreadId);
+				if (r?.error === 'no-workspace') {
+					window.alert(t('subagentWizard.sendErrorNoWs'));
 				}
 				return;
 			}
@@ -2341,15 +2481,17 @@ export default function App() {
 			return;
 		}
 
-		if (
+		const wizardSlug =
 			resendIdx === null &&
-			(typeof textOverride !== 'string' || textOverride.trim().length === 0) &&
-			isCreateSkillComposerTurn(composerSegments)
-		) {
+			(typeof textOverride !== 'string' || textOverride.trim().length === 0)
+				? getLeadingWizardCommand(composerSegments)
+				: null;
+		if (wizardSlug) {
 			if (segmentsTrimmedEmpty(composerSegments)) {
 				return;
 			}
-			setSkillScopePending({
+			setWizardPending({
+				kind: wizardSlug,
 				targetThreadId,
 				tailSegments: composerSegments.slice(1),
 			});
@@ -3504,7 +3646,7 @@ export default function App() {
 	const slashCommand = useComposerSlashCommand(
 		(slot) => (slot === 'inline' && resendIdxRef.current !== null ? setInlineResendSegments : setComposerSegments),
 		composerRichSurface,
-		{ t }
+		{ t, userCommands: mergedAgentCustomization.commands }
 	);
 	const syncComposerOverlays = useCallback(
 		(root: HTMLElement, slot: AtComposerSlot) => {
@@ -4238,7 +4380,7 @@ export default function App() {
 					<div className="ref-followup-bar-row">
 						{barStart}
 						<div className="ref-followup-input-shell">
-							<div className="ref-composer-stacked-body ref-followup-input-body">{richInput}</div>
+							<div className="ref-followup-input-body">{richInput}</div>
 						</div>
 						{barEnd}
 					</div>
@@ -4601,15 +4743,40 @@ export default function App() {
 					/>
 				) : null}
 
-				{skillScopePending ? (
+				{wizardPending?.kind === 'create-skill' ? (
 					<SkillScopeDialog
 						workspaceOpen={!!workspace}
-						onCancel={() => setSkillScopePending(null)}
+						onCancel={() => setWizardPending(null)}
 						onConfirm={(scope) => {
-							const p = skillScopePending;
-							setSkillScopePending(null);
-							if (p) {
+							const p = wizardPending;
+							setWizardPending(null);
+							if (p?.kind === 'create-skill') {
 								void executeSkillCreatorSend(scope, p);
+							}
+						}}
+					/>
+				) : null}
+				{wizardPending?.kind === 'create-rule' ? (
+					<RuleWizardDialog
+						onCancel={() => setWizardPending(null)}
+						onConfirm={(ruleScope, globPattern) => {
+							const p = wizardPending;
+							setWizardPending(null);
+							if (p?.kind === 'create-rule') {
+								void executeRuleWizardSend(ruleScope, globPattern, p);
+							}
+						}}
+					/>
+				) : null}
+				{wizardPending?.kind === 'create-subagent' ? (
+					<SubagentScopeDialog
+						workspaceOpen={!!workspace}
+						onCancel={() => setWizardPending(null)}
+						onConfirm={(scope) => {
+							const p = wizardPending;
+							setWizardPending(null);
+							if (p?.kind === 'create-subagent') {
+								void executeSubagentWizardSend(scope, p);
 							}
 						}}
 					/>

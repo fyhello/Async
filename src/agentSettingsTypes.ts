@@ -41,6 +41,8 @@ export type AgentSubagent = {
 export type AgentCommand = {
 	id: string;
 	name: string;
+	/** 展示在斜杠菜单与命令列表中；可选 */
+	description?: string;
 	/** 不含 /，如 plan 匹配消息开头的 `/plan` */
 	slash: string;
 	/** 可用 {{args}} 表示去掉 /slash 后的正文 */

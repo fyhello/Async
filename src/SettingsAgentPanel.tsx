@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useI18n } from './i18n';
 import type {
 	AgentCommand,
@@ -11,6 +11,7 @@ import type {
 } from './agentSettingsTypes';
 import { defaultAgentCustomization, isWorkspaceDiskImportedSkill } from './agentSettingsTypes';
 import { VoidSelect } from './VoidSelect';
+import { buildSlashCommandListRows } from './composerSlashCommands';
 
 function newId(): string {
 	return globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -246,6 +247,7 @@ export function SettingsAgentPanel({
 			name: '新命令',
 			slash: 'cmd',
 			body: '{{args}}',
+			description: '',
 		};
 		patch({ commands: [...commands, c] });
 	};
@@ -256,6 +258,7 @@ export function SettingsAgentPanel({
 		patch({ commands: commands.filter((x) => x.id !== id) });
 	};
 	const cmdsDrag = useDragReorder(commands, (next) => patch({ commands: next }));
+	const slashCmdHelpRows = useMemo(() => buildSlashCommandListRows(commands, t), [commands, t]);
 
 	const renderOriginBadge = (origin?: AgentItemOrigin) => {
 		const o = origin ?? 'user';
@@ -836,6 +839,26 @@ export function SettingsAgentPanel({
 					</button>
 				</div>
 				<p className="ref-settings-agent-section-desc">{t('agentSettings.cmdDesc')}</p>
+				<div className="ref-settings-agent-slash-help" aria-label={t('agentSettings.cmdSlashListAria')}>
+					<h3 className="ref-settings-agent-subheading">{t('agentSettings.cmdSlashListTitle')}</h3>
+					<ul className="ref-settings-agent-slash-help-list">
+						{slashCmdHelpRows.map((row, i) => (
+							<li key={`${row.label}-${i}`} className="ref-settings-agent-slash-help-item">
+								<div className="ref-settings-agent-slash-help-row">
+									<code className="ref-settings-agent-slash-help-code">{row.label}</code>
+									<span
+										className={`ref-settings-agent-slash-help-badge ${row.source === 'user' ? 'ref-settings-agent-slash-help-badge--user' : ''}`}
+									>
+										{row.source === 'builtin' ? t('slashCmd.helpBuiltin') : t('slashCmd.helpUser')}
+									</span>
+								</div>
+								{row.description ? (
+									<p className="ref-settings-agent-slash-help-desc">{row.description}</p>
+								) : null}
+							</li>
+						))}
+					</ul>
+				</div>
 				<ul className="ref-settings-agent-list">
 					{commands.map((c) => {
 						const collapsed = collapsedCmds.has(c.id);
@@ -879,6 +902,15 @@ export function SettingsAgentPanel({
 												value={c.slash}
 												onChange={(e) => updateCmd(c.id, { slash: e.target.value.replace(/^\//, '') })}
 												placeholder="plan"
+											/>
+										</label>
+										<label className="ref-settings-field ref-settings-field--compact">
+											<span>{t('agentSettings.cmdDescField')}</span>
+											<input
+												value={c.description ?? ''}
+												onChange={(e) => updateCmd(c.id, { description: e.target.value })}
+												placeholder={t('agentSettings.cmdDescFieldPh')}
+												autoComplete="off"
 											/>
 										</label>
 										<label className="ref-settings-field ref-settings-field--compact">

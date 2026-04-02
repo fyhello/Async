@@ -99,6 +99,19 @@ export type ChatSkillCreatorPayload = {
 	scope: 'user' | 'project';
 };
 
+/** Rule 创建向导 */
+export type ChatRuleCreatorPayload = {
+	userNote: string;
+	ruleScope: 'always' | 'glob' | 'manual';
+	globPattern?: string;
+};
+
+/** Subagent 创建向导 */
+export type ChatSubagentCreatorPayload = {
+	userNote: string;
+	scope: 'user' | 'project';
+};
+
 /** Plan Build：主进程将计划全文注入系统上下文（优先读磁盘），短文本仅作用户可见气泡 */
 export type ChatPlanExecutePayload = {
 	fromAbsPath?: string;
@@ -115,6 +128,8 @@ export type ChatSendPayload = {
 	modelId?: string;
 	/** 与 `text` 二选一：走 Skill Creator 分支时传此项，`text` 可为空字符串 */
 	skillCreator?: ChatSkillCreatorPayload;
+	ruleCreator?: ChatRuleCreatorPayload;
+	subagentCreator?: ChatSubagentCreatorPayload;
 	planExecute?: ChatPlanExecutePayload;
 };
 

@@ -1,10 +1,26 @@
 import { parseLeadingWorkspaceRefs } from './composerAtMention';
 
-/** 与 Cursor 类似的斜杠命令 chip，当前仅支持创建 Skill */
-export type SlashCommandId = 'create-skill';
+/** 与 Cursor 类似的斜杠命令 chip；内置向导类命令 */
+export const SLASH_COMMAND_IDS = ['create-skill', 'create-rule', 'create-subagent'] as const;
+export type SlashCommandId = (typeof SLASH_COMMAND_IDS)[number];
+
+export const SLASH_COMMAND_WIRE: Record<SlashCommandId, string> = {
+	'create-skill': '/create-skill',
+	'create-rule': '/create-rule',
+	'create-subagent': '/create-subagent',
+};
 
 export const CREATE_SKILL_SLUG: SlashCommandId = 'create-skill';
-export const CREATE_SKILL_WIRE = '/create-skill';
+export const CREATE_SKILL_WIRE = SLASH_COMMAND_WIRE['create-skill'];
+
+export function isSlashCommandId(s: string): s is SlashCommandId {
+	return (SLASH_COMMAND_IDS as readonly string[]).includes(s);
+}
+
+/** 解析用户消息时匹配 `/wire` 前缀（较长者先匹配） */
+const WIRE_PARSE_ORDER: SlashCommandId[] = [...SLASH_COMMAND_IDS].sort(
+	(a, b) => SLASH_COMMAND_WIRE[b].length - SLASH_COMMAND_WIRE[a].length
+);
 
 export type ComposerSegment =
 	| { id: string; kind: 'text'; text: string }
@@ -49,7 +65,7 @@ export function segmentsContentKey(segments: ComposerSegment[]): string {
 		.join(SEG_CONTENT_KEY_SEP);
 }
 
-/** props 已是 /create-skill chip，DOM 仍为纯文本 `/create-skill…`（含无空格紧贴后缀） */
+/** props 已是某 slash chip，DOM 仍为纯文本 `/…`（含无空格紧贴后缀） */
 export function isSlashCommandDomPendingUpgrade(
 	segments: ComposerSegment[],
 	domSegs: ComposerSegment[]
@@ -57,14 +73,15 @@ export function isSlashCommandDomPendingUpgrade(
 	const norm = mergeAdjacentText(segments);
 	const p0 = norm[0];
 	const d0 = domSegs[0];
-	if (p0?.kind !== 'command' || p0.command !== CREATE_SKILL_SLUG) {
+	if (p0?.kind !== 'command' || !isSlashCommandId(p0.command)) {
 		return false;
 	}
 	if (d0?.kind !== 'text') {
 		return false;
 	}
+	const wire = SLASH_COMMAND_WIRE[p0.command];
 	const tx = d0.text;
-	return tx === CREATE_SKILL_WIRE || tx.startsWith(`${CREATE_SKILL_WIRE}`);
+	return tx === wire || tx.startsWith(wire);
 }
 
 /**
@@ -81,8 +98,8 @@ export function segmentsToWireText(segments: ComposerSegment[]): string {
 		const s = segments[k]!;
 		if (s.kind === 'text') {
 			out += s.text;
-		} else if (s.kind === 'command' && s.command === CREATE_SKILL_SLUG) {
-			out += CREATE_SKILL_WIRE;
+		} else if (s.kind === 'command' && isSlashCommandId(s.command)) {
+			out += SLASH_COMMAND_WIRE[s.command];
 			const next = segments[k + 1];
 			if (next?.kind === 'text' && next.text.length > 0 && !/^\s/u.test(next.text)) {
 				out += FILE_REF_GLUE_SPACE;
@@ -103,20 +120,20 @@ export function segmentsToWireText(segments: ComposerSegment[]): string {
 /** 将用户消息解析为 segments（兼容旧版「首行全是 @路径」格式） */
 export function userMessageToSegments(content: string, knownPaths: string[]): ComposerSegment[] {
 	const trimmedStart = content.replace(/^\uFEFF/, '');
-	if (trimmedStart.startsWith(CREATE_SKILL_WIRE)) {
-		let rest = trimmedStart.slice(CREATE_SKILL_WIRE.length);
-		if (rest.startsWith(FILE_REF_GLUE_SPACE)) {
-			rest = rest.slice(1);
-		} else if (rest.startsWith('\u200c')) {
-			rest = rest.slice(1);
-		} else {
-			rest = rest.replace(/^\s+/, '');
+	for (const cmd of WIRE_PARSE_ORDER) {
+		const wire = SLASH_COMMAND_WIRE[cmd];
+		if (trimmedStart.startsWith(wire)) {
+			let rest = trimmedStart.slice(wire.length);
+			if (rest.startsWith(FILE_REF_GLUE_SPACE)) {
+				rest = rest.slice(1);
+			} else if (rest.startsWith('\u200c')) {
+				rest = rest.slice(1);
+			} else {
+				rest = rest.replace(/^\s+/, '');
+			}
+			const tailSegs = rest.length > 0 ? wirePlainToSegments(rest, knownPaths) : [];
+			return mergeAdjacentText([{ id: newSegmentId(), kind: 'command', command: cmd }, ...tailSegs]);
 		}
-		const tailSegs = rest.length > 0 ? wirePlainToSegments(rest, knownPaths) : [];
-		return mergeAdjacentText([
-			{ id: newSegmentId(), kind: 'command', command: CREATE_SKILL_SLUG },
-			...tailSegs,
-		]);
 	}
 	const legacy = parseLeadingWorkspaceRefs(content);
 	if (legacy.refs.length > 0) {
@@ -188,14 +205,19 @@ export function segmentsTrimmedEmpty(segments: ComposerSegment[]): boolean {
 		return true;
 	}
 	const first = segments[0];
-	if (first?.kind === 'command' && first.command === CREATE_SKILL_SLUG) {
+	if (first?.kind === 'command' && isSlashCommandId(first.command)) {
 		const tail = segments.slice(1);
 		return segmentsToWireText(tail).trim().length === 0;
 	}
 	return segmentsToWireText(segments).trim().length === 0;
 }
 
-export function isCreateSkillComposerTurn(segments: ComposerSegment[]): boolean {
+export function getLeadingWizardCommand(segments: ComposerSegment[]): SlashCommandId | null {
 	const s = segments[0];
-	return s?.kind === 'command' && s.command === CREATE_SKILL_SLUG;
+	return s?.kind === 'command' && isSlashCommandId(s.command) ? s.command : null;
+}
+
+/** @deprecated 使用 getLeadingWizardCommand(segments) === 'create-skill' */
+export function isCreateSkillComposerTurn(segments: ComposerSegment[]): boolean {
+	return getLeadingWizardCommand(segments) === 'create-skill';
 }
