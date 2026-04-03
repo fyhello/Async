@@ -174,8 +174,34 @@ const SIDEBAR_LAYOUT_KEY = 'async:sidebar-widths-v1';
 const SHELL_LAYOUT_MODE_KEY = 'async:shell-layout-mode-v1';
 const COMPOSER_MODE_KEY = 'async:composer-mode-v1';
 const EDITOR_TERMINAL_HEIGHT_KEY = 'async:editor-terminal-height-v1';
+const AGENT_WORKSPACE_ALIASES_KEY = 'async:agent-workspace-aliases-v1';
+const AGENT_WORKSPACE_HIDDEN_KEY = 'async:agent-workspace-hidden-v1';
+const AGENT_WORKSPACE_COLLAPSED_KEY = 'async:agent-workspace-collapsed-v1';
 const EDITOR_TERMINAL_H_MIN = 120;
 const EDITOR_TERMINAL_H_MAX_RATIO = 0.65;
+
+function readJsonStorage<T>(key: string, fallback: T): T {
+	try {
+		if (typeof window === 'undefined') {
+			return fallback;
+		}
+		const raw = localStorage.getItem(key);
+		if (!raw) {
+			return fallback;
+		}
+		return JSON.parse(raw) as T;
+	} catch {
+		return fallback;
+	}
+}
+
+function writeJsonStorage(key: string, value: unknown) {
+	try {
+		localStorage.setItem(key, JSON.stringify(value));
+	} catch {
+		/* ignore */
+	}
+}
 
 function clampEditorTerminalHeight(h: number): number {
 	if (typeof window === 'undefined') {
@@ -470,6 +496,14 @@ function useAsyncShell() {
 	return window.asyncShell;
 }
 
+function isEditableDomTarget(target: EventTarget | null): boolean {
+	if (!(target instanceof HTMLElement)) {
+		return false;
+	}
+	const tag = target.tagName.toLowerCase();
+	return tag === 'input' || tag === 'textarea' || target.isContentEditable;
+}
+
 function IconSearch({ className }: { className?: string }) {
 	return (
 		<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -566,6 +600,16 @@ function IconSettings({ className }: { className?: string }) {
 	);
 }
 
+function IconPlugin({ className }: { className?: string }) {
+	return (
+		<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+			<path d="M9 7.5V6a3 3 0 1 1 6 0v1.5" />
+			<path d="M7.5 10h9A2.5 2.5 0 0 1 19 12.5v1A2.5 2.5 0 0 1 16.5 16H14v3a1 1 0 0 1-2 0v-3h-2.5A2.5 2.5 0 0 1 7 13.5v-1A2.5 2.5 0 0 1 9.5 10Z" />
+			<path d="M5 13h2M17 13h2" />
+		</svg>
+	);
+}
+
 function IconHistory({ className }: { className?: string }) {
 	return (
 		<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -582,6 +626,25 @@ function IconDotsHorizontal({ className }: { className?: string }) {
 			<circle cx="5" cy="12" r="1.5" />
 			<circle cx="12" cy="12" r="1.5" />
 			<circle cx="19" cy="12" r="1.5" />
+		</svg>
+	);
+}
+
+function IconArrowUpRight({ className }: { className?: string }) {
+	return (
+		<svg className={className} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+			<path d="M7 17L17 7" strokeLinecap="round" />
+			<path d="M8 7h9v9" strokeLinecap="round" strokeLinejoin="round" />
+		</svg>
+	);
+}
+
+function IconArchive({ className }: { className?: string }) {
+	return (
+		<svg className={className} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+			<rect x="3" y="4" width="18" height="5" rx="1.5" />
+			<path d="M5 9v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" strokeLinecap="round" />
+			<path d="M10 13h4" strokeLinecap="round" />
 		</svg>
 	);
 }
@@ -890,6 +953,29 @@ export default function App() {
 	const [homeRecents, setHomeRecents] = useState<string[]>([]);
 	/** 文件菜单「打开最近的文件夹」：与是否打开工作区无关 */
 	const [folderRecents, setFolderRecents] = useState<string[]>([]);
+	const [workspaceAliases, setWorkspaceAliases] = useState<Record<string, string>>(() =>
+		readJsonStorage<Record<string, string>>(AGENT_WORKSPACE_ALIASES_KEY, {})
+	);
+	const [hiddenAgentWorkspacePaths, setHiddenAgentWorkspacePaths] = useState<string[]>(() =>
+		readJsonStorage<string[]>(AGENT_WORKSPACE_HIDDEN_KEY, [])
+	);
+	const [collapsedAgentWorkspacePaths, setCollapsedAgentWorkspacePaths] = useState<string[]>(() =>
+		readJsonStorage<string[]>(AGENT_WORKSPACE_COLLAPSED_KEY, [])
+	);
+	const [threadNavigation, setThreadNavigation] = useState<{ history: string[]; index: number }>({
+		history: [],
+		index: -1,
+	});
+	const skipThreadNavigationRecordRef = useRef(false);
+	const [uiZoom, setUiZoom] = useState(1);
+	const [workspaceMenuPath, setWorkspaceMenuPath] = useState<string | null>(null);
+	const [workspaceMenuPosition, setWorkspaceMenuPosition] = useState<{ top: number; left: number } | null>(null);
+	const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
+	const workspaceMenuAnchorRef = useRef<HTMLButtonElement | null>(null);
+	const [editingWorkspacePath, setEditingWorkspacePath] = useState<string | null>(null);
+	const [editingWorkspaceNameDraft, setEditingWorkspaceNameDraft] = useState('');
+	const workspaceNameDraftRef = useRef('');
+	const workspaceNameInputRef = useRef<HTMLInputElement | null>(null);
 	const [openTabs, setOpenTabs] = useState<EditorTab[]>([]);
 	const [activeTabId, setActiveTabId] = useState<string | null>(null);
 	const [filePath, setFilePath] = useState('');
@@ -918,6 +1004,8 @@ export default function App() {
 	const terminalMenuRef = useRef<HTMLDivElement>(null);
 	const [fileMenuOpen, setFileMenuOpen] = useState(false);
 	const fileMenuRef = useRef<HTMLDivElement>(null);
+	const [viewMenuOpen, setViewMenuOpen] = useState(false);
+	const viewMenuRef = useRef<HTMLDivElement>(null);
 	const [editorThreadHistoryOpen, setEditorThreadHistoryOpen] = useState(false);
 	const [editorChatMoreOpen, setEditorChatMoreOpen] = useState(false);
 	const editorHistoryMenuRef = useRef<HTMLDivElement>(null);
@@ -927,6 +1015,7 @@ export default function App() {
 		const s = readSidebarLayout();
 		return clampSidebarLayout(s.left, s.right);
 	});
+	const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
 	const streamThreadRef = useRef<string | null>(null);
 	const streamStartedAtRef = useRef<number | null>(null);
 	const firstTokenAtRef = useRef<number | null>(null);
@@ -963,6 +1052,43 @@ export default function App() {
 		}
 		setStreamingToolPreview(null);
 	}, []);
+
+	const clearWorkspaceConversationState = useCallback(() => {
+		streamThreadRef.current = null;
+		streamStartedAtRef.current = null;
+		firstTokenAtRef.current = null;
+		currentIdRef.current = null;
+		planBuildPendingMarkerRef.current = null;
+		setThreads([]);
+		setCurrentId(null);
+		setMessages([]);
+		setMessagesThreadId(null);
+		setLastTurnUsage(null);
+		setAwaitingReply(false);
+		setStreaming('');
+		setStreamingThinking('');
+		clearStreamingToolPreviewNow();
+		resetLiveAgentBlocks();
+		setParsedPlan(null);
+		setPlanFilePath(null);
+		setPlanFileRelPath(null);
+		setExecutedPlanKeys([]);
+		setPlanQuestion(null);
+		setPlanQuestionRequestId(null);
+		setComposerSegments([]);
+		setInlineResendSegments([]);
+		setResendFromUserIndex(null);
+		setConfirmDeleteId(null);
+		setEditingThreadId(null);
+		setEditingThreadTitleDraft('');
+		setEditingWorkspacePath(null);
+		setEditingWorkspaceNameDraft('');
+		setToolApprovalRequest(null);
+		setMistakeLimitRequest(null);
+		setFileChangesDismissed(false);
+		setDismissedFiles(new Set());
+		setThreadNavigation({ history: [], index: -1 });
+	}, [clearStreamingToolPreviewNow, resetLiveAgentBlocks]);
 
 	const respondToolApproval = useCallback(
 		async (approved: boolean) => {
@@ -1079,6 +1205,13 @@ export default function App() {
 		[threads]
 	);
 
+	const hiddenAgentWorkspacePathSet = useMemo(() => new Set(hiddenAgentWorkspacePaths), [hiddenAgentWorkspacePaths]);
+	const collapsedAgentWorkspacePathSet = useMemo(
+		() => new Set(collapsedAgentWorkspacePaths),
+		[collapsedAgentWorkspacePaths]
+	);
+	const currentWorkspaceThreadCount = todayThreads.length + archivedThreads.length;
+
 	const agentSidebarWorkspaces = useMemo(() => {
 		const seen = new Set<string>();
 		const ordered: string[] = [];
@@ -1093,12 +1226,30 @@ export default function App() {
 			seen.add(p);
 			ordered.push(p);
 		}
-		return ordered.slice(0, 8).map((path) => ({
-			path,
-			name: workspacePathDisplayName(path),
-			isCurrent: path === workspace,
-		}));
-	}, [workspace, folderRecents]);
+		return ordered
+			.filter((path) => !hiddenAgentWorkspacePathSet.has(path))
+			.slice(0, 8)
+			.map((path) => ({
+				path,
+				name: workspaceAliases[path]?.trim() || workspacePathDisplayName(path),
+				parent: workspacePathParent(path),
+				isCurrent: path === workspace,
+				isCollapsed: path === workspace ? collapsedAgentWorkspacePathSet.has(path) : !collapsedAgentWorkspacePathSet.has(path),
+				threadCount: path === workspace ? currentWorkspaceThreadCount : 0,
+			}));
+	}, [
+		workspace,
+		folderRecents,
+		hiddenAgentWorkspacePathSet,
+		workspaceAliases,
+		collapsedAgentWorkspacePathSet,
+		currentWorkspaceThreadCount,
+	]);
+
+	const activeWorkspaceMenuItem = useMemo(
+		() => agentSidebarWorkspaces.find((item) => item.path === workspaceMenuPath) ?? null,
+		[agentSidebarWorkspaces, workspaceMenuPath]
+	);
 
 	const hasConversation = messages.length > 0 || !!streaming;
 	const changeCount = gitChangedPaths.length;
@@ -1124,6 +1275,14 @@ export default function App() {
 		() => (currentId ? agentReviewPendingByThread[currentId] ?? [] : []),
 		[currentId, agentReviewPendingByThread]
 	);
+	const canToggleTerminal = layoutMode === 'editor' && !!workspace;
+	const canToggleDiffPanel = layoutMode === 'agent';
+	const currentThreadIndex = currentId ? threadsChrono.findIndex((thread) => thread.id === currentId) : -1;
+	const canGoPrevThread = currentThreadIndex >= 0 && currentThreadIndex < threadsChrono.length - 1;
+	const canGoNextThread = currentThreadIndex > 0;
+	const canGoBackThread = threadNavigation.index > 0;
+	const canGoForwardThread =
+		threadNavigation.index >= 0 && threadNavigation.index < threadNavigation.history.length - 1;
 
 	const diffTotals = useMemo(() => {
 		let additions = 0;
@@ -1138,9 +1297,46 @@ export default function App() {
 		return { additions, deletions };
 	}, [gitChangedPaths, diffPreviews]);
 
+	useEffect(() => {
+		writeJsonStorage(AGENT_WORKSPACE_ALIASES_KEY, workspaceAliases);
+	}, [workspaceAliases]);
+
+	useEffect(() => {
+		writeJsonStorage(AGENT_WORKSPACE_HIDDEN_KEY, hiddenAgentWorkspacePaths);
+	}, [hiddenAgentWorkspacePaths]);
+
+	useEffect(() => {
+		writeJsonStorage(AGENT_WORKSPACE_COLLAPSED_KEY, collapsedAgentWorkspacePaths);
+	}, [collapsedAgentWorkspacePaths]);
+
+	useEffect(() => {
+		if (!currentId) {
+			return;
+		}
+		if (skipThreadNavigationRecordRef.current) {
+			skipThreadNavigationRecordRef.current = false;
+			return;
+		}
+		setThreadNavigation((prev) => {
+			const base = prev.index >= 0 ? prev.history.slice(0, prev.index + 1) : [];
+			if (base[base.length - 1] === currentId) {
+				return prev;
+			}
+			const history = [...base, currentId].slice(-40);
+			return { history, index: history.length - 1 };
+		});
+	}, [currentId]);
+
+	useEffect(() => {
+		document.body.style.zoom = String(uiZoom);
+		return () => {
+			document.body.style.zoom = '1';
+		};
+	}, [uiZoom]);
+
 	const refreshThreads = useCallback(async () => {
 		if (!shell) {
-			return;
+			return null;
 		}
 		const r = (await shell.invoke('threads:list')) as {
 			threads: ThreadInfo[];
@@ -1148,6 +1344,7 @@ export default function App() {
 		};
 		setThreads((r.threads ?? []).map(normalizeThreadRow));
 		setCurrentId(r.currentId);
+		return r.currentId;
 	}, [shell]);
 
 	const loadMessages = useCallback(
@@ -1209,6 +1406,22 @@ export default function App() {
 		composerAttachErrTimerRef.current = window.setTimeout(() => {
 			setComposerAttachErr(null);
 			composerAttachErrTimerRef.current = null;
+		}, 4200);
+	}, []);
+
+	const showTransientToast = useCallback((ok: boolean, text: string) => {
+		if (subAgentBgToastTimerRef.current !== null) {
+			window.clearTimeout(subAgentBgToastTimerRef.current);
+			subAgentBgToastTimerRef.current = null;
+		}
+		setSubAgentBgToast((prev) => ({
+			key: (prev?.key ?? 0) + 1,
+			ok,
+			text,
+		}));
+		subAgentBgToastTimerRef.current = window.setTimeout(() => {
+			setSubAgentBgToast(null);
+			subAgentBgToastTimerRef.current = null;
 		}, 4200);
 	}, []);
 
@@ -2132,6 +2345,14 @@ export default function App() {
 	}, [shell, workspace]);
 
 	useEffect(() => {
+		if (!workspace) {
+			return;
+		}
+		setHiddenAgentWorkspacePaths((prev) => prev.filter((item) => item !== workspace));
+		setCollapsedAgentWorkspacePaths((prev) => prev.filter((item) => item !== workspace));
+	}, [workspace]);
+
+	useEffect(() => {
 		if (!shell || gitChangedPaths.length === 0) {
 			setDiffPreviews({});
 			setDiffLoading(false);
@@ -2157,10 +2378,12 @@ export default function App() {
 
 	const applyWorkspacePath = useCallback(
 		async (next: string) => {
+			clearWorkspaceConversationState();
 			setWorkspace(next);
+			await refreshThreads();
 			await refreshGit();
 		},
-		[refreshGit]
+		[clearWorkspaceConversationState, refreshThreads, refreshGit]
 	);
 
 	const openWorkspaceByPath = useCallback(
@@ -2181,6 +2404,134 @@ export default function App() {
 			}
 		},
 		[shell, applyWorkspacePath]
+	);
+
+	const toggleWorkspaceCollapsed = useCallback((path: string) => {
+		setCollapsedAgentWorkspacePaths((prev) =>
+			prev.includes(path) ? prev.filter((item) => item !== path) : [...prev, path]
+		);
+	}, []);
+
+	const closeWorkspaceMenu = useCallback(() => {
+		setWorkspaceMenuPath(null);
+		setWorkspaceMenuPosition(null);
+		workspaceMenuAnchorRef.current = null;
+	}, []);
+
+	const openWorkspaceMenu = useCallback((path: string, anchor: HTMLButtonElement) => {
+		workspaceMenuAnchorRef.current = anchor;
+		setWorkspaceMenuPath(path);
+	}, []);
+
+	const revealWorkspaceInOs = useCallback(
+		async (path: string) => {
+			if (!shell) {
+				return;
+			}
+			try {
+				const r = (await shell.invoke('shell:revealAbsolutePath', path)) as { ok?: boolean; error?: string };
+				if (!r?.ok) {
+					flashComposerAttachErr(r?.error ?? t('explorer.errReveal'));
+				}
+			} catch (e) {
+				flashComposerAttachErr(e instanceof Error ? e.message : String(e));
+			}
+			closeWorkspaceMenu();
+		},
+		[shell, flashComposerAttachErr, t, closeWorkspaceMenu]
+	);
+
+	const renameWorkspaceAlias = useCallback(
+		(path: string, nextName?: string) => {
+			const fallback = workspacePathDisplayName(path);
+			const trimmed = (nextName ?? '').trim();
+			setWorkspaceAliases((prev) => {
+				const updated = { ...prev };
+				if (!trimmed || trimmed === fallback) {
+					delete updated[path];
+				} else {
+					updated[path] = trimmed;
+				}
+				return updated;
+			});
+			showTransientToast(true, trimmed ? t('app.workspaceRenamedToast', { name: trimmed }) : t('app.workspaceNameResetToast'));
+		},
+		[t, showTransientToast]
+	);
+
+	const removeWorkspaceFromSidebar = useCallback(
+		async (path: string) => {
+			setWorkspaceAliases((prev) => {
+				if (!(path in prev)) {
+					return prev;
+				}
+				const updated = { ...prev };
+				delete updated[path];
+				return updated;
+			});
+			setCollapsedAgentWorkspacePaths((prev) => prev.filter((item) => item !== path));
+			setHiddenAgentWorkspacePaths((prev) => (prev.includes(path) ? prev : [...prev, path]));
+			setFolderRecents((prev) => prev.filter((item) => item !== path));
+			setHomeRecents((prev) => prev.filter((item) => item !== path));
+			if (editingWorkspacePath === path) {
+				setEditingWorkspacePath(null);
+				setEditingWorkspaceNameDraft('');
+				workspaceNameDraftRef.current = '';
+			}
+			if (shell) {
+				try {
+					await shell.invoke('workspace:removeRecent', path);
+				} catch {
+					/* ignore */
+				}
+			}
+			closeWorkspaceMenu();
+			showTransientToast(true, t('app.workspaceRemovedToast'));
+		},
+		[editingWorkspacePath, shell, showTransientToast, t, closeWorkspaceMenu]
+	);
+
+	const beginWorkspaceAliasEdit = useCallback(
+		(path: string) => {
+			const fallback = workspacePathDisplayName(path);
+			const currentName = workspaceAliases[path]?.trim() || fallback;
+			closeWorkspaceMenu();
+			setEditingWorkspacePath(path);
+			setEditingWorkspaceNameDraft(currentName);
+			workspaceNameDraftRef.current = currentName;
+		},
+		[workspaceAliases, closeWorkspaceMenu]
+	);
+
+	const cancelWorkspaceAliasEdit = useCallback(() => {
+		setEditingWorkspacePath(null);
+		setEditingWorkspaceNameDraft('');
+		workspaceNameDraftRef.current = '';
+	}, []);
+
+	const commitWorkspaceAliasEdit = useCallback(() => {
+		if (!editingWorkspacePath) {
+			return;
+		}
+		const path = editingWorkspacePath;
+		const fallback = workspacePathDisplayName(path);
+		const currentName = workspaceAliases[path]?.trim() || fallback;
+		const draft = workspaceNameDraftRef.current.trim();
+		setEditingWorkspacePath(null);
+		setEditingWorkspaceNameDraft('');
+		workspaceNameDraftRef.current = '';
+		if (draft === currentName) {
+			return;
+		}
+		renameWorkspaceAlias(path, draft);
+	}, [editingWorkspacePath, workspaceAliases, renameWorkspaceAlias]);
+
+	const handleWorkspacePrimaryAction = useCallback(
+		(path: string) => {
+			closeWorkspaceMenu();
+			toggleWorkspaceCollapsed(path);
+		},
+		[toggleWorkspaceCollapsed, closeWorkspaceMenu]
 	);
 
 	const onNewThread = async () => {
@@ -2243,6 +2594,97 @@ export default function App() {
 		setInlineResendSegments([]);
 		await loadMessages(id);
 	};
+
+	const selectThreadByHistoryIndex = useCallback(
+		async (index: number) => {
+			const id = threadNavigation.history[index];
+			if (!id || id === currentId) {
+				return;
+			}
+			skipThreadNavigationRecordRef.current = true;
+			setThreadNavigation((prev) => ({ ...prev, index }));
+			await onSelectThread(id);
+		},
+		[threadNavigation.history, currentId]
+	);
+
+	const goToPreviousThread = useCallback(async () => {
+		if (!currentId) {
+			return;
+		}
+		const index = threadsChrono.findIndex((thread) => thread.id === currentId);
+		if (index < 0 || index >= threadsChrono.length - 1) {
+			return;
+		}
+		await onSelectThread(threadsChrono[index + 1]!.id);
+	}, [currentId, threadsChrono]);
+
+	const goToNextThread = useCallback(async () => {
+		if (!currentId) {
+			return;
+		}
+		const index = threadsChrono.findIndex((thread) => thread.id === currentId);
+		if (index <= 0) {
+			return;
+		}
+		await onSelectThread(threadsChrono[index - 1]!.id);
+	}, [currentId, threadsChrono]);
+
+	const goThreadBack = useCallback(async () => {
+		if (threadNavigation.index <= 0) {
+			return;
+		}
+		await selectThreadByHistoryIndex(threadNavigation.index - 1);
+	}, [threadNavigation.index, selectThreadByHistoryIndex]);
+
+	const goThreadForward = useCallback(async () => {
+		if (threadNavigation.index < 0 || threadNavigation.index >= threadNavigation.history.length - 1) {
+			return;
+		}
+		await selectThreadByHistoryIndex(threadNavigation.index + 1);
+	}, [threadNavigation.index, threadNavigation.history.length, selectThreadByHistoryIndex]);
+
+	const toggleSidebarVisibility = useCallback(() => {
+		setLeftSidebarOpen((open) => !open);
+	}, []);
+
+	const toggleTerminalVisibility = useCallback(() => {
+		if (layoutMode !== 'editor' || !workspace) {
+			return;
+		}
+		setEditorTerminalVisible((visible) => !visible);
+	}, [layoutMode, workspace]);
+
+	const toggleDiffPanelVisibility = useCallback(() => {
+		if (layoutMode !== 'agent') {
+			return;
+		}
+		setAgentGitPanelOpen((open) => !open);
+	}, [layoutMode]);
+
+	const zoomInUi = useCallback(() => {
+		setUiZoom((value) => Math.min(1.6, Math.round((value + 0.1) * 10) / 10));
+	}, []);
+
+	const zoomOutUi = useCallback(() => {
+		setUiZoom((value) => Math.max(0.8, Math.round((value - 0.1) * 10) / 10));
+	}, []);
+
+	const resetUiZoom = useCallback(() => {
+		setUiZoom(1);
+	}, []);
+
+	const toggleFullscreen = useCallback(async () => {
+		try {
+			if (document.fullscreenElement) {
+				await document.exitFullscreen();
+			} else {
+				await document.documentElement.requestFullscreen();
+			}
+		} catch {
+			/* ignore */
+		}
+	}, []);
 
 	const commitThreadTitleEdit = useCallback(async () => {
 		if (!editingThreadId) {
@@ -2352,6 +2794,17 @@ export default function App() {
 			el.select();
 		}
 	}, [editingThreadId]);
+
+	useLayoutEffect(() => {
+		if (!editingWorkspacePath) {
+			return;
+		}
+		const el = workspaceNameInputRef.current;
+		if (el) {
+			el.focus();
+			el.select();
+		}
+	}, [editingWorkspacePath]);
 
 	const onSend = async (
 		textOverride?: string,
@@ -3500,6 +3953,7 @@ export default function App() {
 			return;
 		}
 		await shell.invoke('workspace:closeFolder');
+		clearWorkspaceConversationState();
 		closeEditorTerminalPanel();
 		setWorkspace(null);
 		setOpenTabs([]);
@@ -3507,8 +3961,9 @@ export default function App() {
 		setFilePath('');
 		setEditorValue('');
 		pendingEditorHighlightRangeRef.current = null;
+		await refreshThreads();
 		await refreshGit();
-	}, [shell, closeEditorTerminalPanel, refreshGit]);
+	}, [shell, clearWorkspaceConversationState, closeEditorTerminalPanel, refreshThreads, refreshGit]);
 
 	const fileMenuNewFile = useCallback(async () => {
 		if (!shell || !workspace) {
@@ -3693,6 +4148,20 @@ export default function App() {
 		return () => document.removeEventListener('mousedown', onDoc);
 	}, [fileMenuOpen]);
 
+	useEffect(() => {
+		if (!viewMenuOpen) {
+			return;
+		}
+		const onDoc = (e: MouseEvent) => {
+			if (viewMenuRef.current?.contains(e.target as Node)) {
+				return;
+			}
+			setViewMenuOpen(false);
+		};
+		document.addEventListener('mousedown', onDoc);
+		return () => document.removeEventListener('mousedown', onDoc);
+	}, [viewMenuOpen]);
+
 	// Ctrl/Cmd+P quick open, Ctrl/Cmd+Shift+P command mode (VS Code-style)
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
@@ -3713,6 +4182,94 @@ export default function App() {
 		window.addEventListener('keydown', handler);
 		return () => window.removeEventListener('keydown', handler);
 	}, [quickOpenOpen, openQuickOpen]);
+
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			const mod = e.ctrlKey || e.metaKey;
+			if (!mod) {
+				return;
+			}
+			const key = e.key.toLowerCase();
+			const typing = isEditableDomTarget(e.target);
+			if (typing && !['b', 'j', 'f', '[', ']', '-', '=', '+', '0'].includes(key)) {
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && key === 'b') {
+				e.preventDefault();
+				toggleSidebarVisibility();
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && key === 'j') {
+				if (layoutMode === 'editor' && workspace) {
+					e.preventDefault();
+					toggleTerminalVisibility();
+				}
+				return;
+			}
+			if (!e.shiftKey && e.altKey && key === 'b') {
+				if (layoutMode === 'agent') {
+					e.preventDefault();
+					toggleDiffPanelVisibility();
+				}
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && key === 'f') {
+				e.preventDefault();
+				openQuickOpen('');
+				return;
+			}
+			if (e.shiftKey && !e.altKey && e.key === '[') {
+				e.preventDefault();
+				void goToPreviousThread();
+				return;
+			}
+			if (e.shiftKey && !e.altKey && e.key === ']') {
+				e.preventDefault();
+				void goToNextThread();
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && e.key === '[') {
+				e.preventDefault();
+				void goThreadBack();
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && e.key === ']') {
+				e.preventDefault();
+				void goThreadForward();
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && (e.key === '=' || e.key === '+')) {
+				e.preventDefault();
+				zoomInUi();
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && e.key === '-') {
+				e.preventDefault();
+				zoomOutUi();
+				return;
+			}
+			if (!e.shiftKey && !e.altKey && e.key === '0') {
+				e.preventDefault();
+				resetUiZoom();
+			}
+		};
+		window.addEventListener('keydown', handler);
+		return () => window.removeEventListener('keydown', handler);
+	}, [
+		layoutMode,
+		workspace,
+		openQuickOpen,
+		toggleSidebarVisibility,
+		toggleTerminalVisibility,
+		toggleDiffPanelVisibility,
+		goToPreviousThread,
+		goToNextThread,
+		goThreadBack,
+		goThreadForward,
+		zoomInUi,
+		zoomOutUi,
+		resetUiZoom,
+	]);
 
 	useEffect(() => {
 		const ed = monacoEditorRef.current;
@@ -4299,6 +4856,64 @@ export default function App() {
 		document.addEventListener('mousedown', onDoc);
 		return () => document.removeEventListener('mousedown', onDoc);
 	}, [editorThreadHistoryOpen, editorChatMoreOpen]);
+
+	useEffect(() => {
+		if (!workspaceMenuPath) {
+			return;
+		}
+		const onDoc = (e: MouseEvent) => {
+			const node = e.target as Node;
+			if (workspaceMenuRef.current?.contains(node)) {
+				return;
+			}
+			closeWorkspaceMenu();
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				closeWorkspaceMenu();
+			}
+		};
+		document.addEventListener('mousedown', onDoc);
+		window.addEventListener('keydown', onKey);
+		return () => {
+			document.removeEventListener('mousedown', onDoc);
+			window.removeEventListener('keydown', onKey);
+		};
+	}, [workspaceMenuPath, closeWorkspaceMenu]);
+
+	useLayoutEffect(() => {
+		if (!workspaceMenuPath || !workspaceMenuAnchorRef.current) {
+			return;
+		}
+		const updateMenuPosition = () => {
+			const anchor = workspaceMenuAnchorRef.current;
+			if (!anchor) {
+				return;
+			}
+			const rect = anchor.getBoundingClientRect();
+			const estimatedMenuHeight = 280;
+			let top = rect.bottom + 8;
+			if (top + estimatedMenuHeight > window.innerHeight - 12) {
+				top = Math.max(12, rect.top - estimatedMenuHeight - 8);
+			}
+			setWorkspaceMenuPosition({
+				top,
+				left: Math.max(248, Math.min(rect.right, window.innerWidth - 16)),
+			});
+		};
+		const scheduleUpdate = () => {
+			requestAnimationFrame(updateMenuPosition);
+		};
+		updateMenuPosition();
+		window.addEventListener('resize', scheduleUpdate);
+		document.addEventListener('scroll', scheduleUpdate, true);
+		const unsubLayout = window.asyncShell?.subscribeLayout?.(scheduleUpdate);
+		return () => {
+			window.removeEventListener('resize', scheduleUpdate);
+			document.removeEventListener('scroll', scheduleUpdate, true);
+			unsubLayout?.();
+		};
+	}, [workspaceMenuPath]);
 
 	const beginResizeLeft = useCallback(
 		(e: React.MouseEvent) => {
@@ -5256,7 +5871,7 @@ export default function App() {
 
 	return (
 		<div className={`ref-shell ${layoutMode === 'agent' ? 'ref-shell--agent-layout' : ''}`}>
-			<header className="ref-menubar">
+			<header className={`ref-menubar ${layoutMode === 'agent' ? 'ref-menubar--agent' : ''}`}>
 				<div className="ref-menubar-left">
 					<div className="ref-brand-block-simple">
 						<BrandLogo className="ref-brand-logo" size={22} />
@@ -5270,6 +5885,7 @@ export default function App() {
 								aria-haspopup="menu"
 								onClick={() => {
 									setTerminalMenuOpen(false);
+									setViewMenuOpen(false);
 									setFileMenuOpen((o) => !o);
 								}}
 							>
@@ -5299,17 +5915,186 @@ export default function App() {
 								/>
 							) : null}
 						</div>
-						{(
-							[
-								['Edit', t('app.menuEdit')],
-								['View', t('app.menuView')],
-								['Help', t('app.menuHelp')],
-							] as const
-						).map(([key, label]) => (
-							<button key={key} type="button" className="ref-menu-item">
-								{label}
+						<button type="button" className="ref-menu-item">
+							{t('app.menuEdit')}
+						</button>
+						<div className="ref-menu-dropdown-wrap" ref={viewMenuRef}>
+							<button
+								type="button"
+								className={`ref-menu-item${viewMenuOpen ? ' is-active' : ''}`}
+								aria-expanded={viewMenuOpen}
+								aria-haspopup="menu"
+								onClick={() => {
+									setFileMenuOpen(false);
+									setTerminalMenuOpen(false);
+									setViewMenuOpen((open) => !open);
+								}}
+							>
+								{t('app.menuView')}
 							</button>
-						))}
+							{viewMenuOpen ? (
+								<div className="ref-menu-dropdown" role="menu" aria-label={t('app.menuView')}>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										onClick={() => {
+											toggleSidebarVisibility();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.toggleSidebar')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+B</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										disabled={!canToggleTerminal}
+										onClick={() => {
+											toggleTerminalVisibility();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.toggleTerminal')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+J</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										disabled={!canToggleDiffPanel}
+										onClick={() => {
+											toggleDiffPanelVisibility();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.toggleDiffPanel')}</span>
+										<kbd className="ref-menu-kbd">Alt+Ctrl+B</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										onClick={() => {
+											openQuickOpen('');
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.find')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+F</kbd>
+									</button>
+									<div className="ref-menu-dropdown-sep" role="separator" />
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										disabled={!canGoPrevThread}
+										onClick={() => {
+											void goToPreviousThread();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.previousThread')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+Shift+[</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										disabled={!canGoNextThread}
+										onClick={() => {
+											void goToNextThread();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.nextThread')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+Shift+]</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										disabled={!canGoBackThread}
+										onClick={() => {
+											void goThreadBack();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.back')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+[</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										disabled={!canGoForwardThread}
+										onClick={() => {
+											void goThreadForward();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.forward')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+]</kbd>
+									</button>
+									<div className="ref-menu-dropdown-sep" role="separator" />
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										onClick={() => {
+											zoomInUi();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.zoomIn')}</span>
+										<kbd className="ref-menu-kbd">Ctrl++</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										onClick={() => {
+											zoomOutUi();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.zoomOut')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+-</kbd>
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										onClick={() => {
+											resetUiZoom();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.actualSize')}</span>
+										<kbd className="ref-menu-kbd">Ctrl+0</kbd>
+									</button>
+									<div className="ref-menu-dropdown-sep" role="separator" />
+									<button
+										type="button"
+										role="menuitem"
+										className="ref-menu-dropdown-item ref-menu-dropdown-item--row"
+										onClick={() => {
+											void toggleFullscreen();
+											setViewMenuOpen(false);
+										}}
+									>
+										<span>{t('app.view.toggleFullscreen')}</span>
+									</button>
+								</div>
+							) : null}
+						</div>
+						<button type="button" className="ref-menu-item">
+							{t('app.menuWindow')}
+						</button>
+						<button type="button" className="ref-menu-item">
+							{t('app.menuHelp')}
+						</button>
 						{layoutMode === 'editor' && workspace ? (
 							<div className="ref-menu-dropdown-wrap" ref={terminalMenuRef}>
 								<button
@@ -5319,6 +6104,7 @@ export default function App() {
 									aria-haspopup="menu"
 									onClick={() => {
 										setFileMenuOpen(false);
+										setViewMenuOpen(false);
 										setTerminalMenuOpen((o) => !o);
 									}}
 								>
@@ -5341,18 +6127,20 @@ export default function App() {
 						) : null}
 					</nav>
 				</div>
-				<div className="ref-menubar-center">
-					<button
-						type="button"
-						className="ref-global-search-btn"
-						aria-label={t('quickOpen.menubarAria')}
-						title={t('quickOpen.placeholder')}
-						onClick={() => openQuickOpen('')}
-					>
-						<IconSearch className="ref-global-search-icon" />
-						<span className="ref-global-search-text">{t('quickOpen.menubarSummary')}</span>
-						<kbd className="ref-global-search-kbd">{quickOpenPrimaryShortcutLabel()}</kbd>
-					</button>
+				<div className={`ref-menubar-center ${layoutMode === 'agent' ? 'ref-menubar-center--hidden' : ''}`}>
+					{layoutMode !== 'agent' ? (
+						<button
+							type="button"
+							className="ref-global-search-btn"
+							aria-label={t('quickOpen.menubarAria')}
+							title={t('quickOpen.placeholder')}
+							onClick={() => openQuickOpen('')}
+						>
+							<IconSearch className="ref-global-search-icon" />
+							<span className="ref-global-search-text">{t('quickOpen.menubarSummary')}</span>
+							<kbd className="ref-global-search-kbd">{quickOpenPrimaryShortcutLabel()}</kbd>
+						</button>
+					) : null}
 				</div>
 				<div className="ref-menubar-right">
 					<button
@@ -5482,12 +6270,12 @@ export default function App() {
 					style={{
 						gridTemplateColumns:
 							layoutMode === 'agent' && !agentGitPanelOpen
-								? `${railWidths.left}px ${RESIZE_HANDLE_PX}px minmax(0, 1fr) 0px 0px`
-								: `${railWidths.left}px ${RESIZE_HANDLE_PX}px minmax(0, 1fr) ${RESIZE_HANDLE_PX}px ${railWidths.right}px`,
+								? `${leftSidebarOpen ? railWidths.left : 0}px ${leftSidebarOpen ? RESIZE_HANDLE_PX : 0}px minmax(0, 1fr) 0px 0px`
+								: `${leftSidebarOpen ? railWidths.left : 0}px ${leftSidebarOpen ? RESIZE_HANDLE_PX : 0}px minmax(0, 1fr) ${RESIZE_HANDLE_PX}px ${railWidths.right}px`,
 					}}
 				>
 				<aside
-					className={`ref-left ${
+					className={`ref-left ${leftSidebarOpen ? '' : 'is-collapsed'} ${
 						layoutMode === 'editor' ? 'ref-left--editor-embedded' : 'ref-left--agent-layout'
 					}`}
 					aria-label={t('app.projectAndAgent')}
@@ -5506,7 +6294,7 @@ export default function App() {
 										className="ref-agent-nav-item"
 										onClick={() => openSettingsPage('plugins')}
 									>
-										<IconSettings className="ref-agent-nav-item-icon" />
+										<IconPlugin className="ref-agent-nav-item-icon" />
 										<span>{t('settings.nav.plugins')}</span>
 									</button>
 								</nav>
@@ -5547,58 +6335,175 @@ export default function App() {
 											</button>
 										) : (
 											agentSidebarWorkspaces.map((ws) => {
-												const showThreads = ws.isCurrent;
-												const hasThreads = todayThreads.length > 0 || archivedThreads.length > 0;
+												const hasThreads = ws.isCurrent && ws.threadCount > 0;
+												const showThreads = !ws.isCollapsed;
+												const workspaceQuickActionTitle = ws.isCurrent
+													? t('app.workspaceMenuOpenInExplorer')
+													: t('app.openWorkspace');
+												const isEditingWorkspace = editingWorkspacePath === ws.path;
 												return (
 													<div
 														key={ws.path}
-														className={`ref-agent-workspace-group ${ws.isCurrent ? 'is-active' : ''}`}
+														className={`ref-agent-workspace-group ${ws.isCurrent ? 'is-active' : ''} ${
+															ws.isCollapsed ? 'is-collapsed' : ''
+														} ${workspaceMenuPath === ws.path ? 'is-menu-open' : ''}`}
 													>
-														<button
-															type="button"
-															className={`ref-agent-workspace-row ${ws.isCurrent ? 'is-active' : ''}`}
-															onClick={() => {
-																if (!ws.isCurrent) {
-																	void openWorkspaceByPath(ws.path);
-																}
-															}}
-														>
-															<span className="ref-agent-workspace-row-icon" aria-hidden>
-																<IconExplorer />
-															</span>
-															<span className="ref-agent-workspace-row-label" title={ws.path}>
-																{ws.name}
-															</span>
-														</button>
-
-														{showThreads ? (
-															hasThreads ? (
-																<div className="ref-agent-thread-tree">
-																	<div className="ref-agent-thread-cluster">
-																		<div className="ref-thread-section-label ref-thread-section-label--nested">
-																			{t('app.today')}
-																		</div>
-																		<div className="ref-thread-list ref-thread-list--nested">
-																			{todayThreads.map(renderThreadItem)}
-																		</div>
-																	</div>
-																	{archivedThreads.length > 0 ? (
-																		<div className="ref-agent-thread-cluster">
-																			<div className="ref-thread-section-label ref-thread-section-label--archived ref-thread-section-label--nested">
-																				{t('app.archived')}
-																			</div>
-																			<div className="ref-thread-list ref-thread-list--nested">
-																				{archivedThreads.map(renderThreadItem)}
-																			</div>
-																		</div>
+														<div className={`ref-agent-workspace-row-shell ${ws.isCurrent ? 'is-active' : ''}`}>
+															{isEditingWorkspace ? (
+																<div className={`ref-agent-workspace-row is-editing ${ws.isCurrent ? 'is-active' : ''}`}>
+																	<span
+																		className={`ref-agent-workspace-disclosure ${
+																			showThreads ? 'is-open' : ''
+																		} is-visible`}
+																		aria-hidden
+																	>
+																		<IconChevron className="ref-agent-workspace-disclosure-icon" />
+																	</span>
+																	<span className="ref-agent-workspace-row-icon" aria-hidden>
+																		<IconExplorer />
+																	</span>
+																	<span className="ref-agent-workspace-row-copy">
+																		<input
+																			ref={workspaceNameInputRef}
+																			type="text"
+																			className="ref-agent-workspace-title-input"
+																			value={editingWorkspaceNameDraft}
+																			aria-label={t('app.workspaceMenuEditNamePrompt')}
+																			onChange={(e) => {
+																				const v = e.target.value;
+																				setEditingWorkspaceNameDraft(v);
+																				workspaceNameDraftRef.current = v;
+																			}}
+																			onClick={(e) => e.stopPropagation()}
+																			onKeyDown={(e) => {
+																				if (e.key === 'Enter') {
+																					e.preventDefault();
+																					commitWorkspaceAliasEdit();
+																				} else if (e.key === 'Escape') {
+																					e.preventDefault();
+																					cancelWorkspaceAliasEdit();
+																				}
+																			}}
+																			onBlur={commitWorkspaceAliasEdit}
+																		/>
+																		<span
+																			className="ref-agent-workspace-row-subtitle"
+																			title={ws.parent || ws.path}
+																		>
+																			{ws.parent || ws.path}
+																		</span>
+																	</span>
+																	{ws.threadCount > 0 ? (
+																		<span className="ref-agent-workspace-row-badge">{ws.threadCount}</span>
 																	) : null}
 																</div>
 															) : (
-																<div className="ref-agent-workspace-empty">{t('app.noThreads')}</div>
-															)
-														) : (
-															<div className="ref-agent-workspace-empty">{t('app.noThreads')}</div>
-														)}
+																<button
+																	type="button"
+																	className={`ref-agent-workspace-row ${ws.isCurrent ? 'is-active' : ''}`}
+																	onClick={() => handleWorkspacePrimaryAction(ws.path)}
+																	aria-expanded={!ws.isCollapsed}
+																>
+																	<span
+																		className={`ref-agent-workspace-disclosure ${
+																			showThreads ? 'is-open' : ''
+																		} is-visible`}
+																		aria-hidden
+																	>
+																		<IconChevron className="ref-agent-workspace-disclosure-icon" />
+																	</span>
+																	<span className="ref-agent-workspace-row-icon" aria-hidden>
+																		<IconExplorer />
+																	</span>
+																	<span className="ref-agent-workspace-row-copy">
+																		<span className="ref-agent-workspace-row-label" title={ws.path}>
+																			{ws.name}
+																		</span>
+																		<span
+																			className="ref-agent-workspace-row-subtitle"
+																			title={ws.parent || ws.path}
+																		>
+																			{ws.parent || ws.path}
+																		</span>
+																	</span>
+																	{ws.threadCount > 0 ? (
+																		<span className="ref-agent-workspace-row-badge">{ws.threadCount}</span>
+																	) : null}
+																</button>
+															)}
+
+															<div className="ref-agent-workspace-actions">
+																<button
+																	type="button"
+																	className="ref-agent-workspace-action-btn"
+																	title={workspaceQuickActionTitle}
+																	aria-label={workspaceQuickActionTitle}
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		if (ws.isCurrent) {
+																			void revealWorkspaceInOs(ws.path);
+																		} else {
+																			setHiddenAgentWorkspacePaths((prev) => prev.filter((item) => item !== ws.path));
+																			void openWorkspaceByPath(ws.path);
+																		}
+																	}}
+																>
+																	<IconArrowUpRight />
+																</button>
+																<button
+																	type="button"
+																	className={`ref-agent-workspace-action-btn ${
+																		workspaceMenuPath === ws.path ? 'is-active' : ''
+																	}`}
+																	title={t('app.editorChatMoreAria')}
+																	aria-label={t('app.editorChatMoreAria')}
+																	aria-haspopup="menu"
+																	aria-expanded={workspaceMenuPath === ws.path}
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		const anchor = e.currentTarget;
+																		if (workspaceMenuPath === ws.path) {
+																			closeWorkspaceMenu();
+																		} else {
+																			openWorkspaceMenu(ws.path, anchor);
+																		}
+																	}}
+																>
+																	<IconDotsHorizontal />
+																</button>
+															</div>
+														</div>
+
+														<div className={`ref-collapse-grid ${showThreads ? 'is-open' : ''}`}>
+															<div className="ref-collapse-inner">
+																{showThreads ? (
+																	hasThreads ? (
+																		<div className="ref-agent-thread-tree">
+																			<div className="ref-agent-thread-cluster">
+																				<div className="ref-thread-section-label ref-thread-section-label--nested">
+																					{t('app.today')}
+																				</div>
+																				<div className="ref-thread-list ref-thread-list--nested">
+																					{todayThreads.map(renderThreadItem)}
+																				</div>
+																			</div>
+																			{archivedThreads.length > 0 ? (
+																				<div className="ref-agent-thread-cluster">
+																					<div className="ref-thread-section-label ref-thread-section-label--archived ref-thread-section-label--nested">
+																						{t('app.archived')}
+																					</div>
+																					<div className="ref-thread-list ref-thread-list--nested">
+																						{archivedThreads.map(renderThreadItem)}
+																					</div>
+																				</div>
+																			) : null}
+																		</div>
+																	) : (
+																		<div className="ref-agent-workspace-empty">{t('app.noThreads')}</div>
+																	)
+																) : null}
+															</div>
+														</div>
 													</div>
 												);
 											})
@@ -5668,12 +6573,12 @@ export default function App() {
 				</aside>
 
 				<div
-					className="ref-resize-handle"
+					className={`ref-resize-handle ${leftSidebarOpen ? '' : 'is-collapsed'}`}
 					role="separator"
 					aria-orientation="vertical"
 					aria-label={t('app.resizeLeftAria')}
 					title={t('app.resizeLeftTitle')}
-					onMouseDown={beginResizeLeft}
+					onMouseDown={leftSidebarOpen ? beginResizeLeft : undefined}
 					onDoubleClick={resetRailWidths}
 				/>
 
@@ -6274,6 +7179,59 @@ export default function App() {
 				)}
 			</div>
 			)}
+
+			{activeWorkspaceMenuItem && workspaceMenuPosition ? (
+				<div
+					ref={workspaceMenuRef}
+					className="ref-agent-workspace-menu ref-agent-workspace-menu--floating"
+					role="menu"
+					style={{
+						top: workspaceMenuPosition.top,
+						left: workspaceMenuPosition.left,
+						transform: 'translateX(-100%)',
+					}}
+				>
+					<button
+						type="button"
+						className="ref-agent-workspace-menu-item"
+						role="menuitem"
+						onClick={() => void revealWorkspaceInOs(activeWorkspaceMenuItem.path)}
+					>
+						<span className="ref-agent-workspace-menu-item-icon" aria-hidden>
+							<IconArrowUpRight />
+						</span>
+						<span className="ref-agent-workspace-menu-item-copy">
+							<span className="ref-agent-workspace-menu-item-label">{t('app.workspaceMenuOpenInExplorer')}</span>
+						</span>
+					</button>
+					<button
+						type="button"
+						className="ref-agent-workspace-menu-item"
+						role="menuitem"
+						onClick={() => beginWorkspaceAliasEdit(activeWorkspaceMenuItem.path)}
+					>
+						<span className="ref-agent-workspace-menu-item-icon" aria-hidden>
+							<IconPencil />
+						</span>
+						<span className="ref-agent-workspace-menu-item-copy">
+							<span className="ref-agent-workspace-menu-item-label">{t('app.workspaceMenuEditName')}</span>
+						</span>
+					</button>
+					<button
+						type="button"
+						className="ref-agent-workspace-menu-item is-destructive"
+						role="menuitem"
+						onClick={() => removeWorkspaceFromSidebar(activeWorkspaceMenuItem.path)}
+					>
+						<span className="ref-agent-workspace-menu-item-icon" aria-hidden>
+							<IconTrash />
+						</span>
+						<span className="ref-agent-workspace-menu-item-copy">
+							<span className="ref-agent-workspace-menu-item-label">{t('app.workspaceMenuRemove')}</span>
+						</span>
+					</button>
+				</div>
+			) : null}
 
 			{workspaceToolsOpen ? (
 				<section className="ref-drawer ref-drawer--terminal-only">

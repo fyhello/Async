@@ -42,8 +42,8 @@ app.whenReady().then(() => {
 		setWorkspaceRoot(restored);
 		void ensureWorkspaceFileIndex(restored).catch(() => {});
 	}
-	initThreadStore(userData);
-	ensureDefaultThread();
+	initThreadStore(userData, restored ?? null);
+	ensureDefaultThread(restored ?? null);
 	registerIpc();
 	createAppWindow();
 

@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { windowsCmdUtf8Prefix } from '../winUtf8.js';
 import { setWorkspaceRoot, getWorkspaceRoot, resolveWorkspacePath, isPathInsideRoot } from '../workspace.js';
@@ -20,6 +20,7 @@ import {
 	patchSettings,
 	getRecentWorkspaces,
 	rememberWorkspace,
+	removeRecentWorkspace,
 	getMcpServerConfigs,
 	patchMcpServerConfigs,
 	removeMcpServerConfig,
@@ -485,6 +486,16 @@ export function registerIpc(): void {
 		}),
 	}));
 
+	ipcMain.handle('workspace:removeRecent', (_e, dirPath: string) => {
+		try {
+			const resolved = path.resolve(String(dirPath ?? ''));
+			removeRecentWorkspace(resolved);
+			return { ok: true as const };
+		} catch (e) {
+			return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+		}
+	});
+
 	ipcMain.handle('workspace:get', () => ({ root: getWorkspaceRoot() }));
 
 	ipcMain.handle('workspace:searchSymbols', (_e, query: string) => {
@@ -799,10 +810,11 @@ export function registerIpc(): void {
 	});
 
 	ipcMain.handle('threads:list', () => {
-		ensureDefaultThread();
+		const scope = getWorkspaceRoot();
+		ensureDefaultThread(scope);
 		const now = Date.now();
 		return {
-			threads: listThreads().map((t) => {
+			threads: listThreads(scope).map((t) => {
 				const sum = summarizeThreadForSidebar(t);
 				return {
 					id: t.id,
@@ -816,7 +828,7 @@ export function registerIpc(): void {
 					...sum,
 				};
 			}),
-			currentId: getCurrentThreadId(),
+			currentId: getCurrentThreadId(scope),
 		};
 	});
 
@@ -840,23 +852,24 @@ export function registerIpc(): void {
 	});
 
 	ipcMain.handle('threads:create', () => {
-		const t = createThread();
+		const t = createThread(getWorkspaceRoot());
 		return { id: t.id };
 	});
 
 	ipcMain.handle('threads:select', (_e, id: string) => {
-		const t = selectThread(id);
+		const t = selectThread(getWorkspaceRoot(), id);
 		return { ok: !!t };
 	});
 
 	ipcMain.handle('threads:delete', (_e, id: string) => {
-		deleteThread(id);
-		ensureDefaultThread();
-		return { ok: true as const, currentId: getCurrentThreadId() };
+		const scope = getWorkspaceRoot();
+		deleteThread(scope, id);
+		ensureDefaultThread(scope);
+		return { ok: true as const, currentId: getCurrentThreadId(scope) };
 	});
 
 	ipcMain.handle('threads:rename', (_e, id: string, title: string) => {
-		const ok = setThreadTitle(String(id ?? ''), String(title ?? ''));
+		const ok = setThreadTitle(getWorkspaceRoot(), String(id ?? ''), String(title ?? ''));
 		return { ok };
 	});
 
@@ -1443,6 +1456,50 @@ export function registerIpc(): void {
 			} else {
 				shell.showItemInFolder(full);
 			}
+			return { ok: true as const };
+		} catch (e) {
+			return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+		}
+	});
+
+	ipcMain.handle('shell:revealAbsolutePath', async (_e, rawPath: string) => {
+		try {
+			const target = String(rawPath ?? '').trim();
+			if (!target) {
+				return { ok: false as const, error: 'empty path' };
+			}
+			const full = path.resolve(target);
+			if (!fs.existsSync(full)) {
+				return { ok: false as const, error: 'not found' };
+			}
+			const st = fs.statSync(full);
+			if (process.platform === 'win32') {
+				try {
+					const args = st.isDirectory() ? [full] : [`/select,${full}`];
+					const child = spawn('explorer.exe', args, {
+						detached: true,
+						stdio: 'ignore',
+						windowsHide: false,
+					});
+					child.unref();
+					return { ok: true as const };
+				} catch {
+					/* fall through */
+				}
+			}
+			if (process.platform === 'darwin' && !st.isDirectory()) {
+				try {
+					await execFileAsync('open', ['-R', full], { windowsHide: true });
+					return { ok: true as const };
+				} catch {
+					/* fall through */
+				}
+			}
+			if (st.isDirectory()) {
+				const err = await shell.openPath(full);
+				return err ? ({ ok: false as const, error: err } as const) : ({ ok: true as const } as const);
+			}
+			shell.showItemInFolder(full);
 			return { ok: true as const };
 		} catch (e) {
 			return { ok: false as const, error: e instanceof Error ? e.message : String(e) };

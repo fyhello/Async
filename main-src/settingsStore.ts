@@ -503,6 +503,15 @@ export function rememberWorkspace(root: string): void {
 	save();
 }
 
+export function removeRecentWorkspace(root: string): void {
+	const norm = path.resolve(root);
+	cached.recentWorkspaces = getRecentWorkspaces().filter((p) => path.resolve(p) !== norm);
+	if (cached.lastOpenedWorkspace && path.resolve(cached.lastOpenedWorkspace) === norm) {
+		cached.lastOpenedWorkspace = cached.recentWorkspaces[0] ?? null;
+	}
+	save();
+}
+
 export function getRestorableWorkspace(): string | null {
 	const p = cached.lastOpenedWorkspace;
 	if (!p || typeof p !== 'string') {

@@ -38,12 +38,13 @@ export function ComposerThoughtBlock({
 		}
 		return [{ id: 'fallback-thinking', text: streamingThinking }];
 	}, [chunks, streamingThinking]);
+	const reasoningBody = useMemo(() => renderChunks.map((chunk) => chunk.text).join('\n\n'), [renderChunks]);
 
 	useEffect(() => {
-		if (renderChunks.length > 0) {
+		if (phase !== 'done' && renderChunks.length > 0) {
 			setOpen(true);
 		}
-	}, [renderChunks]);
+	}, [phase, renderChunks]);
 
 	const reasoningScrollRef = useRef<HTMLDivElement>(null);
 
@@ -100,7 +101,10 @@ export function ComposerThoughtBlock({
 				aria-controls={panelId}
 				onClick={onToggle}
 			>
-				<span className="ref-thought-head-label">{headline}</span>
+				<span className={`ref-thought-head-indicator ref-thought-head-indicator--${phase}`} aria-hidden />
+				<span className="ref-thought-head-copy">
+					<span className="ref-thought-head-label">{headline}</span>
+				</span>
 				<span className={`ref-thought-chev ${open ? 'is-open' : ''}`} aria-hidden>
 					<svg
 						className="ref-thought-chev-svg"
@@ -119,15 +123,13 @@ export function ComposerThoughtBlock({
 			<div className={`ref-collapse-grid ${open ? 'is-open' : ''}`}>
 				<div className="ref-collapse-inner">
 					<div id={panelId} role="region" aria-labelledby={headId} className="ref-thought-panel">
-						{renderChunks.length > 0 ? (
+						{reasoningBody.trim().length > 0 ? (
 							<div ref={reasoningScrollRef} className="ref-thought-reasoning-wrap">
-								{renderChunks.map((chunk) => (
-									<div key={chunk.id} className="ref-thought-reasoning-chunk">
-										<div className="ref-md-root ref-thought-md-root">
-											<ReactMarkdown remarkPlugins={[remarkGfm]}>{chunk.text}</ReactMarkdown>
-										</div>
+								<div className="ref-thought-reasoning-surface">
+									<div className="ref-md-root ref-thought-md-root">
+										<ReactMarkdown remarkPlugins={[remarkGfm]}>{reasoningBody}</ReactMarkdown>
 									</div>
-								))}
+								</div>
 							</div>
 						) : null}
 						{phase === 'done' && tokenUsage && (tokenUsage.inputTokens || tokenUsage.outputTokens) ? (
