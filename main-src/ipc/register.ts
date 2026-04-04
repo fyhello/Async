@@ -583,6 +583,45 @@ export function registerIpc(): void {
 		return { ok: true as const };
 	});
 
+	ipcMain.handle('app:windowGetState', (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!win) {
+			return { ok: false as const, error: 'no-window' as const };
+		}
+		return { ok: true as const, maximized: win.isMaximized() };
+	});
+
+	ipcMain.handle('app:windowMinimize', (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!win) {
+			return { ok: false as const, error: 'no-window' as const };
+		}
+		win.minimize();
+		return { ok: true as const };
+	});
+
+	ipcMain.handle('app:windowToggleMaximize', (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!win) {
+			return { ok: false as const, error: 'no-window' as const };
+		}
+		if (win.isMaximized()) {
+			win.unmaximize();
+		} else {
+			win.maximize();
+		}
+		return { ok: true as const };
+	});
+
+	ipcMain.handle('app:windowClose', (event) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!win) {
+			return { ok: false as const, error: 'no-window' as const };
+		}
+		win.close();
+		return { ok: true as const };
+	});
+
 	ipcMain.handle('app:quit', () => {
 		app.quit();
 		return { ok: true as const };

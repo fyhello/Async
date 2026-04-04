@@ -127,6 +127,7 @@ import {
 } from './editorMarkdownView';
 import { isPlanMdPath, planExecutedKey } from './planExecutedKey';
 import { MenubarFileMenu } from './MenubarFileMenu';
+import { MenubarWindowMenu } from './MenubarWindowMenu';
 import { QuickOpenPalette, quickOpenPrimaryShortcutLabel, saveShortcutLabel } from './quickOpenPalette';
 import { registerTsLspMonacoOnce } from './tsLspMonaco';
 import { monacoWorkspaceRootRef } from './tsLspWorkspaceRef';
@@ -1140,6 +1141,9 @@ export default function App() {
 	const editMenuRef = useRef<HTMLDivElement>(null);
 	const [viewMenuOpen, setViewMenuOpen] = useState(false);
 	const viewMenuRef = useRef<HTMLDivElement>(null);
+	const [windowMenuOpen, setWindowMenuOpen] = useState(false);
+	const windowMenuRef = useRef<HTMLDivElement>(null);
+	const [windowMaximized, setWindowMaximized] = useState(false);
 	const [editorThreadHistoryOpen, setEditorThreadHistoryOpen] = useState(false);
 	const [editorChatMoreOpen, setEditorChatMoreOpen] = useState(false);
 	const editorHistoryMenuRef = useRef<HTMLDivElement>(null);
@@ -4729,6 +4733,31 @@ export default function App() {
 		await shell.invoke('app:newWindow');
 	}, [shell]);
 
+	const windowMenuMinimize = useCallback(async () => {
+		if (!shell) {
+			return;
+		}
+		await shell.invoke('app:windowMinimize');
+	}, [shell]);
+
+	const windowMenuToggleMaximize = useCallback(async () => {
+		if (!shell) {
+			return;
+		}
+		await shell.invoke('app:windowToggleMaximize');
+		const r = (await shell.invoke('app:windowGetState')) as { ok?: boolean; maximized?: boolean };
+		if (r?.ok && typeof r.maximized === 'boolean') {
+			setWindowMaximized(r.maximized);
+		}
+	}, [shell]);
+
+	const windowMenuCloseWindow = useCallback(async () => {
+		if (!shell) {
+			return;
+		}
+		await shell.invoke('app:windowClose');
+	}, [shell]);
+
 	const fileMenuQuit = useCallback(async () => {
 		if (shell) {
 			await shell.invoke('app:quit');
@@ -4822,6 +4851,39 @@ export default function App() {
 		document.addEventListener('mousedown', onDoc);
 		return () => document.removeEventListener('mousedown', onDoc);
 	}, [viewMenuOpen]);
+
+	useEffect(() => {
+		if (!windowMenuOpen) {
+			return;
+		}
+		const onDoc = (e: MouseEvent) => {
+			if (windowMenuRef.current?.contains(e.target as Node)) {
+				return;
+			}
+			setWindowMenuOpen(false);
+		};
+		document.addEventListener('mousedown', onDoc);
+		return () => document.removeEventListener('mousedown', onDoc);
+	}, [windowMenuOpen]);
+
+	useEffect(() => {
+		if (!windowMenuOpen || !shell) {
+			return;
+		}
+		let cancelled = false;
+		void shell.invoke('app:windowGetState').then((r) => {
+			if (cancelled) {
+				return;
+			}
+			const o = r as { ok?: boolean; maximized?: boolean };
+			if (o?.ok && typeof o.maximized === 'boolean') {
+				setWindowMaximized(o.maximized);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [windowMenuOpen, shell]);
 
 	// Ctrl/Cmd+P quick open, Ctrl/Cmd+Shift+P command mode (VS Code-style)
 	useEffect(() => {
@@ -6862,6 +6924,7 @@ export default function App() {
 									setEditMenuOpen(false);
 									setTerminalMenuOpen(false);
 									setViewMenuOpen(false);
+									setWindowMenuOpen(false);
 									setFileMenuOpen((o) => !o);
 								}}
 							>
@@ -6902,6 +6965,7 @@ export default function App() {
 									setFileMenuOpen(false);
 									setTerminalMenuOpen(false);
 									setViewMenuOpen(false);
+									setWindowMenuOpen(false);
 									setEditMenuOpen((open) => !open);
 								}}
 							>
@@ -7008,6 +7072,7 @@ export default function App() {
 									setFileMenuOpen(false);
 									setEditMenuOpen(false);
 									setTerminalMenuOpen(false);
+									setWindowMenuOpen(false);
 									setViewMenuOpen((open) => !open);
 								}}
 							>
@@ -7170,9 +7235,34 @@ export default function App() {
 								</div>
 							) : null}
 						</div>
-						<button type="button" className="ref-menu-item">
-							{t('app.menuWindow')}
-						</button>
+						<div className="ref-menu-dropdown-wrap" ref={windowMenuRef}>
+							<button
+								type="button"
+								className={`ref-menu-item${windowMenuOpen ? ' is-active' : ''}`}
+								aria-expanded={windowMenuOpen}
+								aria-haspopup="menu"
+								onClick={() => {
+									setFileMenuOpen(false);
+									setEditMenuOpen(false);
+									setTerminalMenuOpen(false);
+									setViewMenuOpen(false);
+									setWindowMenuOpen((o) => !o);
+								}}
+							>
+								{t('app.menuWindow')}
+							</button>
+							{windowMenuOpen ? (
+								<MenubarWindowMenu
+									onClose={() => setWindowMenuOpen(false)}
+									isDesktopShell={!!shell}
+									windowMaximized={windowMaximized}
+									onNewWindow={() => void fileMenuNewWindow()}
+									onMinimize={() => void windowMenuMinimize()}
+									onToggleMaximize={() => void windowMenuToggleMaximize()}
+									onCloseWindow={() => void windowMenuCloseWindow()}
+								/>
+							) : null}
+						</div>
 						<button type="button" className="ref-menu-item">
 							{t('app.menuHelp')}
 						</button>
@@ -7187,6 +7277,7 @@ export default function App() {
 										setFileMenuOpen(false);
 										setEditMenuOpen(false);
 										setViewMenuOpen(false);
+										setWindowMenuOpen(false);
 										setTerminalMenuOpen((o) => !o);
 									}}
 								>
