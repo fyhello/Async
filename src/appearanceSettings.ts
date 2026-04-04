@@ -1,6 +1,6 @@
 export type UiFontPresetId = 'apple' | 'inter' | 'segoe';
 export type CodeFontPresetId = 'sfmono' | 'monospace' | 'jetbrains';
-export type ThemePresetId = 'async' | 'graphite' | 'forest' | 'sunset';
+export type ThemePresetId = 'async' | 'cursor' | 'graphite' | 'forest' | 'sunset';
 export type ThemePresetSelectionId = ThemePresetId | 'custom';
 
 type AppearanceChromeSeed = {
@@ -39,7 +39,7 @@ export const MONOSPACE_CODE_FONT_STACK =
 export const JETBRAINS_CODE_FONT_STACK =
 	'"JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace';
 
-export const THEME_PRESET_IDS: readonly ThemePresetId[] = ['async', 'graphite', 'forest', 'sunset'];
+export const THEME_PRESET_IDS: readonly ThemePresetId[] = ['async', 'cursor', 'graphite', 'forest', 'sunset'];
 
 /**
  * 与 `styles/theme-dark.css` / `theme-light.css` 中 mac-codex 的 `--void-*` 一致（另补 `--void-accent` = `--void-ring`）。
@@ -106,14 +106,14 @@ function macCodexBuiltinPreviewVarsLight(): Record<string, string> {
 		'--ref-menubar-chrome-bg': 'rgba(240, 244, 250, 0.86)',
 		'--void-sidebar-fill': 'rgba(245, 247, 251, 0.78)',
 		'--void-accent-cool': '#418eff',
-		'--void-accent-warm': '#a78bfa',
+		'--void-accent-warm': '#f97316',
 		'--void-accent-assist': '#3d62c4',
 		'--void-accent-cool-soft': 'rgba(78, 146, 255, 0.16)',
-		'--void-accent-warm-soft': 'rgba(167, 139, 250, 0.14)',
+		'--void-accent-warm-soft': 'rgba(249, 115, 22, 0.14)',
 		'--surface-tint-soft': 'rgba(65, 142, 255, 0.08)',
 		'--surface-tint-strong': 'rgba(65, 142, 255, 0.13)',
 		'--app-backdrop':
-			'radial-gradient(circle at top center, rgba(65, 142, 255, 0.1) 0%, transparent 34%), radial-gradient(circle at 10% 18%, rgba(56, 189, 248, 0.08) 0%, transparent 22%), radial-gradient(circle at 86% 12%, rgba(167, 139, 250, 0.08) 0%, transparent 24%), linear-gradient(180deg, #f0f4fa 0%, #e8edf5 48%, #e4eaf3 100%)',
+			'radial-gradient(circle at top center, rgba(65, 142, 255, 0.1) 0%, transparent 34%), radial-gradient(circle at 10% 18%, rgba(56, 189, 248, 0.08) 0%, transparent 22%), radial-gradient(circle at 86% 12%, rgba(249, 115, 22, 0.08) 0%, transparent 24%), linear-gradient(180deg, #f0f4fa 0%, #e8edf5 48%, #e4eaf3 100%)',
 	};
 }
 
@@ -166,6 +166,27 @@ const APPEARANCE_CHROME_CSS_VAR_KEYS: string[] = [
 	'--surface-bubble-user',
 	'--surface-card-bg',
 	'--surface-card-bg-soft',
+	'--void-agent-shell-glow',
+	'--void-agent-sidebar-bg',
+	'--void-agent-center-bg',
+	'--void-settings-backdrop-bg',
+	'--void-settings-root-bg',
+	'--void-settings-sidebar-bg',
+	'--void-settings-main-bg',
+	'--void-btn-primary-bg',
+	'--void-btn-primary-border',
+	'--void-btn-primary-shadow',
+	'--void-btn-primary-hover-bg',
+	'--void-btn-primary-hover-filter',
+	'--void-btn-primary-hover-transform',
+	'--void-input-bg',
+	'--void-input-border',
+	'--void-input-shadow',
+	'--void-input-focus-border',
+	'--void-input-focus-shadow',
+	'--void-appearance-shell-bg',
+	'--void-appearance-shell-border',
+	'--void-appearance-shell-shadow',
 	'--void-shadow-card',
 	'--void-shadow-soft',
 	'--void-thought-meta',
@@ -176,7 +197,32 @@ const APPEARANCE_CHROME_CSS_VAR_KEYS: string[] = [
 	'--void-git-added',
 	'--void-git-deleted',
 	'--void-git-ignored',
+	'--void-agent-shell-bg',
+	'--void-agent-right-bg',
+	'--void-menubar-bg',
+	'--void-titlebar-symbol-color',
+	'--void-composer-send-bg',
+	'--void-composer-send-color',
+	'--void-composer-send-hover-bg',
+	'--void-composer-send-hover-color',
+	'--void-composer-send-border',
+	'--void-composer-send-shadow',
+	'--void-composer-send-hover-filter',
+	'--void-composer-send-hover-transform',
 ];
+
+/** Cursor 暗色：对话区、侧栏、输入框与用户消息气泡（与 Cursor 客户端对齐） */
+const CURSOR_DARK_CHAT_BG = '#181818';
+const CURSOR_DARK_SIDEBAR_BG = '#141414';
+const CURSOR_DARK_COMPOSER_USER_BUBBLE_BG = '#1F1F1F';
+/** 顶栏与 Windows 标题栏按钮符号、发送按钮（未禁用）图标色 */
+const CURSOR_DARK_CHROME_MUTED_FG = '#BBBBBB';
+
+/** Cursor 明亮：侧栏/顶栏、输入区、发送钮、设置项卡片 */
+const CURSOR_LIGHT_SIDEBAR_MENUBAR_BG = '#F3F3F3';
+const CURSOR_LIGHT_COMPOSER_INPUT_BG = '#FCFCFC';
+const CURSOR_LIGHT_SEND_BTN_BG = '#222222';
+const CURSOR_LIGHT_SETTINGS_OPTION_BG = '#EFEFEF';
 
 /**
  * 与 mac-codex `theme-dark` / `theme-light` 的 bg0、fg0、强调色（ring）一致，作为内置种子与「恢复默认」。
@@ -200,6 +246,23 @@ export const BUILTIN_COLOR_SCHEME_APPEARANCE: Record<'light' | 'dark', Appearanc
 
 export const APPEARANCE_THEME_PRESETS: Record<ThemePresetId, Record<'light' | 'dark', AppearanceChromeSeed>> = {
 	async: BUILTIN_COLOR_SCHEME_APPEARANCE,
+	/** 对齐 codex-theme-v1（codeThemeId: codex）：surface / ink / accent / contrast 与 semantic diff、skill */
+	cursor: {
+		dark: {
+			backgroundColor: CURSOR_DARK_CHAT_BG,
+			foregroundColor: '#FCFCFC',
+			accentColor: '#0169CC',
+			contrast: 60,
+			translucentSidebar: true,
+		},
+		light: {
+			backgroundColor: '#FFFFFF',
+			foregroundColor: '#0D0D0D',
+			accentColor: '#339CFF',
+			contrast: 45,
+			translucentSidebar: true,
+		},
+	},
 	graphite: {
 		dark: {
 			backgroundColor: '#161A20',
@@ -557,7 +620,7 @@ function macCodexSemanticSurfaceTokens(
 	if (!isLight) {
 		const cardTop = mixHex(bg1, accent, 0.055 + a);
 		const cardBot = mixHex(bg0, accent, 0.032 + a * 0.8);
-		const shadowTint = mixHex('#0f172a', accent, 0.25);
+		const shadowTint = mixHex(bg0, '#000000', 0.8);
 		return {
 			'--surface-panel-bg': hexToRgba(bg1, 0.96),
 			'--surface-panel-bg-strong': hexToRgba(mixHex(bg0, bg1, 0.3), 0.985),
@@ -591,7 +654,7 @@ function macCodexSemanticSurfaceTokens(
 	}
 	const cardTopL = mixHex(bg1, accent, 0.09 + a);
 	const cardBotL = mixHex(bg0, accent, 0.05 + a);
-	const shadowBlue = mixHex('#1e293b', accent, 0.45);
+	const shadowBlue = mixHex(bg0, fg0, 0.4);
 	return {
 		'--surface-panel-bg': hexToRgba(mixHex(bg1, accent, 0.08 + a), 0.84),
 		'--surface-panel-bg-strong': hexToRgba(mixHex(bg0, accent, 0.05 + a), 0.92),
@@ -662,7 +725,9 @@ export function nativeWindowChromeFromAppearance(
 	const fg1 = vars['--void-fg-1'] ?? '#ced7dc';
 	const bg0Hex = opaqueHexForNativeChrome(bg0, bg0);
 	const titleHex = opaqueHexForNativeChrome(menubar, bg0Hex);
-	const symbolHex = opaqueHexForNativeChrome(fg1, titleHex);
+	const symbolToken = vars['--void-titlebar-symbol-color']?.trim() ?? '';
+	const symbolHex =
+		/^#[0-9a-fA-F]{6}$/i.test(symbolToken) ? normalizeHexColor(symbolToken, titleHex) : opaqueHexForNativeChrome(fg1, titleHex);
 	return {
 		backgroundColor: bg0Hex,
 		titleBarColor: titleHex,
@@ -679,21 +744,29 @@ export function appearanceSettingsColorVars(settings: AppAppearanceSettings): Re
 	const bg0 = normalizeHexColor(settings.backgroundColor, '#111111');
 	const fg0 = normalizeHexColor(settings.foregroundColor, '#FCFCFC');
 	const accent = normalizeHexColor(settings.accentColor, '#0169CC');
-	const warm = accentWarmCompanion(accent);
+	const isLightChrome = relativeLuminance(bg0) > 0.44;
+	const scheme: 'light' | 'dark' = isLightChrome ? 'light' : 'dark';
+	const inferredPreset = inferThemePresetIdForScheme(settings, scheme);
+	const isCursorPreset = settings.themePresetId === 'cursor' || inferredPreset === 'cursor';
+	const warm = isCursorPreset
+		? scheme === 'dark'
+			? '#E02E2A'
+			: '#BA2623'
+		: accentWarmCompanion(accent);
 	const accentBias = 0.022 + contrastBoost * 0.045;
-	const baseB1 = mixHex(bg0, fg0, 0.03 + contrastBoost * 0.035);
-	const baseB2 = mixHex(bg0, fg0, 0.06 + contrastBoost * 0.055);
-	const baseB3 = mixHex(bg0, fg0, 0.1 + contrastBoost * 0.075);
+	const elevationRef = isLightChrome ? '#FFFFFF' : fg0;
+	const baseB1 = mixHex(bg0, elevationRef, 0.05 + contrastBoost * 0.035);
+	const baseB2 = mixHex(bg0, elevationRef, 0.09 + contrastBoost * 0.055);
+	const baseB3 = mixHex(bg0, elevationRef, 0.15 + contrastBoost * 0.075);
 	const bg1 = mixHex(baseB1, accent, accentBias);
 	const bg2 = mixHex(baseB2, accent, accentBias * 1.45);
 	const bg3 = mixHex(baseB3, accent, accentBias * 1.85);
 	const fg1 = mixHex(fg0, bg0, 0.14 + (1 - contrastBoost) * 0.03);
 	const fg2 = mixHex(fg0, bg0, 0.34 + (1 - contrastBoost) * 0.08);
 	const fg3 = mixHex(fg0, bg0, 0.54 + (1 - contrastBoost) * 0.08);
-	const border = mixHex(bg0, fg0, 0.12 + contrastBoost * 0.1);
-	const borderSoft = hexToRgba(fg0, 0.06 + contrastBoost * 0.08);
+	const border = hexToRgba(fg0, 0.14 + contrastBoost * 0.06);
+	const borderSoft = hexToRgba(fg0, 0.07 + contrastBoost * 0.05);
 	const sidebarAlpha = settings.translucentSidebar ? 0.74 : 0.98;
-	const isLightChrome = relativeLuminance(bg0) > 0.44;
 	const semantic = macCodexSemanticSurfaceTokens(
 		isLightChrome,
 		bg0,
@@ -706,6 +779,135 @@ export function appearanceSettingsColorVars(settings: AppAppearanceSettings): Re
 		warm,
 		contrastBoost
 	);
+	const cursorCodexSemantic: Record<string, string> = isCursorPreset
+		? scheme === 'dark'
+			? {
+					'--void-bg-0': CURSOR_DARK_CHAT_BG,
+					'--void-bg-1': CURSOR_DARK_SIDEBAR_BG,
+					'--void-bg-2': CURSOR_DARK_COMPOSER_USER_BUBBLE_BG,
+					'--void-bg-3': mixHex(CURSOR_DARK_COMPOSER_USER_BUBBLE_BG, '#FFFFFF', 0.07),
+					'--void-git-added': '#00A240',
+					'--void-git-deleted': '#E02E2A',
+					'--void-git-untracked': mixHex('#00A240', accent, 0.22),
+					'--void-git-modified': mixHex('#FBBF24', warm, 0.32),
+					'--void-sidebar-fill': hexToRgba(CURSOR_DARK_SIDEBAR_BG, sidebarAlpha),
+					'--void-agent-shell-glow': 'none',
+					'--void-agent-shell-bg': CURSOR_DARK_CHAT_BG,
+					'--void-agent-sidebar-bg': CURSOR_DARK_SIDEBAR_BG,
+					'--void-agent-center-bg': CURSOR_DARK_CHAT_BG,
+					'--void-agent-right-bg': CURSOR_DARK_CHAT_BG,
+					'--void-settings-backdrop-bg': CURSOR_DARK_CHAT_BG,
+					'--void-settings-root-bg': CURSOR_DARK_CHAT_BG,
+					'--void-settings-sidebar-bg': CURSOR_DARK_SIDEBAR_BG,
+					'--void-settings-main-bg': CURSOR_DARK_CHAT_BG,
+					'--void-btn-primary-bg': accent,
+					'--void-btn-primary-border': 'none',
+					'--void-btn-primary-shadow': 'none',
+					'--void-btn-primary-hover-bg': mixHex(accent, '#FFFFFF', 0.1),
+					'--void-btn-primary-hover-filter': 'none',
+					'--void-btn-primary-hover-transform': 'none',
+					'--void-input-bg': CURSOR_DARK_COMPOSER_USER_BUBBLE_BG,
+					'--void-input-border': hexToRgba(fg0, 0.12),
+					'--void-input-shadow': 'none',
+					'--void-input-focus-border': mixHex(CURSOR_DARK_COMPOSER_USER_BUBBLE_BG, accent, 0.42),
+					'--void-input-focus-shadow': 'none',
+					'--surface-panel-bg': hexToRgba(CURSOR_DARK_SIDEBAR_BG, 0.96),
+					'--surface-panel-bg-strong': hexToRgba(CURSOR_DARK_CHAT_BG, 0.99),
+					'--surface-popover-bg': hexToRgba(CURSOR_DARK_SIDEBAR_BG, 0.98),
+					'--surface-glass-stroke': hexToRgba(fg0, 0.1),
+					'--shadow-floating': `0 10px 28px ${hexToRgba('#000000', 0.32)}`,
+					'--shadow-popover': `0 14px 36px ${hexToRgba('#000000', 0.38)}`,
+					'--shadow-accent': 'none',
+					'--void-appearance-shell-bg': hexToRgba(mixHex(CURSOR_DARK_CHAT_BG, fg0, 0.05), 1),
+					'--void-appearance-shell-border': hexToRgba(fg0, 0.12),
+					'--void-appearance-shell-shadow': `0 8px 22px ${hexToRgba('#000000', 0.28)}`,
+					'--surface-bubble-user': CURSOR_DARK_COMPOSER_USER_BUBBLE_BG,
+					'--surface-panel-bg-soft': hexToRgba(CURSOR_DARK_CHAT_BG, 0.92),
+					'--surface-search-bg': hexToRgba(CURSOR_DARK_COMPOSER_USER_BUBBLE_BG, 0.96),
+					'--surface-control-bg': CURSOR_DARK_COMPOSER_USER_BUBBLE_BG,
+					'--surface-control-bg-hover': mixHex(CURSOR_DARK_COMPOSER_USER_BUBBLE_BG, '#FFFFFF', 0.06),
+					'--surface-control-bg-active': mixHex(CURSOR_DARK_COMPOSER_USER_BUBBLE_BG, '#FFFFFF', 0.1),
+					'--surface-card-bg-soft': CURSOR_DARK_COMPOSER_USER_BUBBLE_BG,
+					'--surface-card-bg': CURSOR_DARK_COMPOSER_USER_BUBBLE_BG,
+					'--void-thought-meta': mixHex(CURSOR_DARK_CHAT_BG, fg0, 0.45),
+					'--void-thought-body': mixHex(CURSOR_DARK_CHAT_BG, fg0, 0.75),
+					'--void-thought-detail': mixHex(CURSOR_DARK_CHAT_BG, fg0, 0.55),
+					'--ref-menubar-chrome-bg': CURSOR_DARK_SIDEBAR_BG,
+					'--void-menubar-bg': CURSOR_DARK_SIDEBAR_BG,
+					'--void-titlebar-symbol-color': CURSOR_DARK_CHROME_MUTED_FG,
+					'--void-composer-send-bg': 'transparent',
+					'--void-composer-send-color': CURSOR_DARK_CHROME_MUTED_FG,
+					'--void-composer-send-hover-bg': 'transparent',
+					'--void-composer-send-hover-color': mixHex(CURSOR_DARK_CHROME_MUTED_FG, '#FFFFFF', 0.14),
+					'--void-composer-send-border': 'none',
+					'--void-composer-send-shadow': 'none',
+					'--void-composer-send-hover-filter': 'none',
+					'--void-composer-send-hover-transform': 'none',
+				}
+			: {
+					'--void-bg-0': '#FFFFFF',
+					'--void-bg-1': CURSOR_LIGHT_SIDEBAR_MENUBAR_BG,
+					'--void-bg-2': CURSOR_LIGHT_COMPOSER_INPUT_BG,
+					'--void-bg-3': CURSOR_LIGHT_SETTINGS_OPTION_BG,
+					'--void-git-added': '#00A240',
+					'--void-git-deleted': '#BA2623',
+					'--void-git-untracked': mixHex('#00A240', accent, 0.2),
+					'--void-git-modified': mixHex('#F59E0B', accent, 0.38),
+					'--void-sidebar-fill': hexToRgba(CURSOR_LIGHT_SIDEBAR_MENUBAR_BG, sidebarAlpha),
+					'--void-agent-shell-glow': 'none',
+					'--void-agent-shell-bg': '#FFFFFF',
+					'--void-agent-sidebar-bg': CURSOR_LIGHT_SIDEBAR_MENUBAR_BG,
+					'--void-agent-center-bg': '#FFFFFF',
+					'--void-agent-right-bg': '#FFFFFF',
+					'--void-settings-backdrop-bg': hexToRgba('#FFFFFF', 0.72),
+					'--void-settings-root-bg': '#FFFFFF',
+					'--void-settings-sidebar-bg': CURSOR_LIGHT_SIDEBAR_MENUBAR_BG,
+					'--void-settings-main-bg': '#FFFFFF',
+					'--void-btn-primary-bg': accent,
+					'--void-btn-primary-border': 'none',
+					'--void-btn-primary-shadow': 'none',
+					'--void-btn-primary-hover-bg': mixHex(accent, '#000000', 0.1),
+					'--void-btn-primary-hover-filter': 'none',
+					'--void-btn-primary-hover-transform': 'none',
+					'--void-input-bg': CURSOR_LIGHT_COMPOSER_INPUT_BG,
+					'--void-input-border': hexToRgba(fg0, 0.12),
+					'--void-input-shadow': 'none',
+					'--void-input-focus-border': mixHex(CURSOR_LIGHT_COMPOSER_INPUT_BG, accent, 0.5),
+					'--void-input-focus-shadow': 'none',
+					'--surface-panel-bg': hexToRgba(CURSOR_LIGHT_SIDEBAR_MENUBAR_BG, 0.96),
+					'--surface-panel-bg-strong': hexToRgba('#FFFFFF', 0.98),
+					'--surface-popover-bg': hexToRgba('#FFFFFF', 0.98),
+					'--surface-glass-stroke': hexToRgba(fg0, 0.1),
+					'--shadow-floating': `0 12px 32px ${hexToRgba('#000000', 0.08)}`,
+					'--shadow-popover': `0 16px 40px ${hexToRgba('#000000', 0.1)}`,
+					'--shadow-accent': 'none',
+					'--void-appearance-shell-bg': CURSOR_LIGHT_SETTINGS_OPTION_BG,
+					'--void-appearance-shell-border': hexToRgba(fg0, 0.1),
+					'--void-appearance-shell-shadow': `0 8px 24px ${hexToRgba('#000000', 0.06)}`,
+					'--surface-bubble-user': CURSOR_LIGHT_COMPOSER_INPUT_BG,
+					'--surface-panel-bg-soft': hexToRgba(CURSOR_LIGHT_SIDEBAR_MENUBAR_BG, 0.9),
+					'--surface-search-bg': hexToRgba(CURSOR_LIGHT_SETTINGS_OPTION_BG, 0.95),
+					'--surface-control-bg': CURSOR_LIGHT_SETTINGS_OPTION_BG,
+					'--surface-control-bg-hover': mixHex(CURSOR_LIGHT_SETTINGS_OPTION_BG, '#000000', 0.04),
+					'--surface-control-bg-active': mixHex(CURSOR_LIGHT_SETTINGS_OPTION_BG, '#000000', 0.07),
+					'--surface-card-bg-soft': CURSOR_LIGHT_COMPOSER_INPUT_BG,
+					'--surface-card-bg': CURSOR_LIGHT_COMPOSER_INPUT_BG,
+					'--void-thought-meta': mixHex('#FFFFFF', fg0, 0.5),
+					'--void-thought-body': mixHex('#FFFFFF', fg0, 0.8),
+					'--void-thought-detail': mixHex('#FFFFFF', fg0, 0.6),
+					'--ref-menubar-chrome-bg': CURSOR_LIGHT_SIDEBAR_MENUBAR_BG,
+					'--void-menubar-bg': CURSOR_LIGHT_SIDEBAR_MENUBAR_BG,
+					'--void-titlebar-symbol-color': fg0,
+					'--void-composer-send-bg': CURSOR_LIGHT_SEND_BTN_BG,
+					'--void-composer-send-color': '#FFFFFF',
+					'--void-composer-send-hover-bg': mixHex(CURSOR_LIGHT_SEND_BTN_BG, '#FFFFFF', 0.12),
+					'--void-composer-send-hover-color': '#FFFFFF',
+					'--void-composer-send-border': 'none',
+					'--void-composer-send-shadow': 'none',
+					'--void-composer-send-hover-filter': 'none',
+					'--void-composer-send-hover-transform': 'none',
+				}
+		: {};
 	return {
 		'--void-bg-0': bg0,
 		'--void-bg-1': bg1,
@@ -721,7 +923,11 @@ export function appearanceSettingsColorVars(settings: AppAppearanceSettings): Re
 		'--void-accent-soft': hexToRgba(accent, 0.1 + contrastBoost * 0.04),
 		'--void-accent-cool': accent,
 		'--void-accent-warm': warm,
-		'--void-accent-assist': mixHex('#7696f8', accent, isLightChrome ? 0.14 : 0.26),
+		'--void-accent-assist': isCursorPreset
+			? scheme === 'dark'
+				? '#B06DFF'
+				: '#924FF7'
+			: mixHex('#7696f8', accent, isLightChrome ? 0.14 : 0.26),
 		'--void-accent-cool-soft': hexToRgba(accent, 0.14 + contrastBoost * 0.03),
 		'--void-accent-warm-soft': hexToRgba(warm, 0.12 + contrastBoost * 0.03),
 		'--surface-tint-soft': hexToRgba(accent, 0.07 + contrastBoost * 0.035),
@@ -731,12 +937,13 @@ export function appearanceSettingsColorVars(settings: AppAppearanceSettings): Re
 		'--void-border-soft': borderSoft,
 		'--void-ring': accent,
 		'--void-scrollbar-track': isLightChrome ? hexToRgba(bg1, 0.78) : hexToRgba(bg0, 0.66),
-		'--void-scrollbar-thumb': mixHex(bg0, fg0, 0.2 + contrastBoost * 0.1),
-		'--void-scrollbar-thumb-hover': mixHex(bg0, fg0, 0.26 + contrastBoost * 0.1),
-		'--void-scrollbar-thumb-active': mixHex(bg0, fg0, 0.32 + contrastBoost * 0.1),
+		'--void-scrollbar-thumb': hexToRgba(fg0, 0.2 + contrastBoost * 0.1),
+		'--void-scrollbar-thumb-hover': hexToRgba(fg0, 0.26 + contrastBoost * 0.1),
+		'--void-scrollbar-thumb-active': hexToRgba(fg0, 0.32 + contrastBoost * 0.1),
 		'--void-sidebar-fill': hexToRgba(bg1, sidebarAlpha),
 		'--ref-menubar-chrome-bg': mixHex(bg0, fg0, 0.07 + contrastBoost * 0.04),
 		...semantic,
+		...cursorCodexSemantic,
 	};
 }
 

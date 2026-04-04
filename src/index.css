@@ -1734,9 +1734,9 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 .ref-agent-workspace-title-input {
 	width: 100%;
 	min-width: 0;
-	border: 1px solid var(--void-border-soft);
+	border: 1px solid var(--void-input-border, var(--void-border-soft));
 	border-radius: 10px;
-	background: color-mix(in srgb, var(--void-bg-2) 88%, transparent);
+	background: var(--void-input-bg, color-mix(in srgb, var(--void-bg-2) 88%, transparent));
 	color: var(--void-fg-0);
 	font: inherit;
 	font-size: 13px;
@@ -1744,14 +1744,12 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	line-height: 1.2;
 	padding: 6px 10px;
 	outline: none;
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+	box-shadow: var(--void-input-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.03));
 }
 
 .ref-agent-workspace-title-input:focus {
-	border-color: var(--void-ring);
-	box-shadow:
-		0 0 0 3px color-mix(in srgb, var(--void-ring) 18%, transparent),
-		inset 0 1px 0 rgba(255, 255, 255, 0.04);
+	border-color: var(--void-input-focus-border, var(--void-ring));
+	box-shadow: var(--void-input-focus-shadow, 0 0 0 3px color-mix(in srgb, var(--void-ring) 18%, transparent));
 }
 
 .ref-agent-workspace-row-subtitle {
@@ -1999,6 +1997,278 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	grid-template-rows: minmax(0, 1fr) auto;
 	flex: 1;
 	min-height: 0;
+}
+
+/* Agent 布局左栏：略收紧字号、图标与间距（相对编辑器侧栏更密） */
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-search-wrap {
+	margin: 0 2px 8px;
+	padding: 6px 9px;
+	gap: 6px;
+	border-radius: 7px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-search-input {
+	font-size: 11px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-search-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-new-btn {
+	margin: 0 2px 12px;
+	padding: 7px 10px;
+	font-size: 11px;
+	gap: 6px;
+	border-radius: 7px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-nav-list {
+	gap: 5px;
+	margin-bottom: 16px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-nav-item {
+	font-size: 13px;
+	padding: 8px 10px;
+	gap: 8px;
+	border-radius: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-nav-item-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-sidebar-section-head {
+	gap: 8px;
+	padding: 2px 4px 8px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-sidebar-section-title {
+	font-size: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-sidebar-icon-btn {
+	width: 24px;
+	height: 24px;
+	border-radius: 7px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-stack {
+	gap: 6px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-group {
+	gap: 5px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-row-shell {
+	border-radius: 14px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-row {
+	gap: 8px;
+	padding: 8px 9px 8px 7px;
+	font-size: 13px;
+	border-radius: 12px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-disclosure {
+	width: 12px;
+	height: 12px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-row-icon {
+	width: 21px;
+	height: 21px;
+	border-radius: 7px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-title-input {
+	font-size: 12px;
+	padding: 5px 8px;
+	border-radius: 8px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-row-subtitle {
+	font-size: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-row-badge {
+	min-width: 18px;
+	height: 18px;
+	padding: 0 6px;
+	font-size: 9px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-action-btn {
+	width: 24px;
+	height: 24px;
+	border-radius: 8px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-menu {
+	min-width: 208px;
+	padding: 6px;
+	border-radius: 14px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-menu-item {
+	gap: 8px;
+	padding: 7px 8px;
+	border-radius: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-menu-item-icon {
+	width: 16px;
+	height: 16px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-menu-item-label {
+	font-size: 12px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-menu-item-note {
+	font-size: 9px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-workspace-empty,
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-empty-workspace {
+	font-size: 11px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-sidebar-kicker {
+	padding: 2px 6px 8px;
+	font-size: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-project-node {
+	gap: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-project-node-main {
+	gap: 8px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-project-node-icon {
+	width: 24px;
+	height: 24px;
+	border-radius: 8px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-project-node-title {
+	font-size: 13px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-project-node-subtitle {
+	font-size: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-project-node-badge {
+	min-width: 20px;
+	height: 20px;
+	font-size: 10px;
+	padding: 0 6px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-side-btn {
+	padding: 7px 10px;
+	font-size: 11px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-thread-tree {
+	gap: 8px;
+	padding: 2px 0 2px 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-thread-tree::before {
+	left: 6px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-thread-cluster {
+	padding-left: 8px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-thread-cluster::before {
+	top: 12px;
+	width: 9px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-section-label {
+	font-size: 10px;
+	padding: 2px 6px 5px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-section-label--nested {
+	padding: 0 0 5px 8px;
+	font-size: 9px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-list--nested {
+	gap: 5px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-row {
+	font-size: 12px;
+	padding: 8px 4px 8px 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-row-lead {
+	width: 16px;
+	height: 16px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-row-meta {
+	font-size: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-title-input {
+	margin: 3px 0 3px 6px;
+	padding: 4px 7px;
+	font-size: 12px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-thread-action {
+	width: 24px;
+	height: 24px;
+	border-radius: 7px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-settings-link {
+	font-size: 13px;
+	padding: 8px 10px;
+	gap: 8px;
+	border-radius: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-agent-settings-link-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-left-footer--agent .ref-open-workspace {
+	padding: 8px 10px;
+	font-size: 11px;
+	margin-bottom: 10px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-left-footer--agent .ref-user-strip {
+	gap: 8px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-user-avatar {
+	width: 28px;
+	height: 28px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-user-name {
+	font-size: 11px;
+}
+
+.ref-shell--agent-layout .ref-left--agent-layout .ref-user-plan {
+	font-size: 9px;
 }
 
 .ref-project-block--agent {
@@ -2352,8 +2622,8 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 }
 
 .ref-thread-title-input:focus {
-	border-color: var(--void-ring);
-	box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+	border-color: var(--void-input-focus-border, var(--void-ring));
+	box-shadow: var(--void-input-focus-shadow, 0 0 0 2px rgba(129, 140, 248, 0.2));
 }
 
 .ref-thread-row-actions {
@@ -7792,8 +8062,9 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	width: 100%;
 	padding: 10px 12px;
 	border-radius: 8px;
-	border: 1px solid var(--void-border);
-	background: #141418;
+	border: 1px solid var(--void-input-border, var(--void-border));
+	background: var(--void-input-bg, #141418);
+	box-shadow: var(--void-input-shadow, none);
 	color: var(--void-fg-0);
 	font-size: 13px;
 	font-family: inherit;
@@ -7801,8 +8072,8 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 }
 
 .ws-modal-search:focus {
-	border-color: var(--void-fg-3);
-	box-shadow: 0 0 0 1px var(--void-ring);
+	border-color: var(--void-input-focus-border, var(--void-fg-3));
+	box-shadow: var(--void-input-focus-shadow, 0 0 0 1px var(--void-ring));
 }
 
 .ws-modal-search::placeholder {
@@ -9312,8 +9583,8 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 .ref-appearance-color-control input[type='text']:focus,
 .ref-appearance-number-control input:focus {
 	outline: none;
-	border-color: var(--void-ring);
-	box-shadow: 0 0 0 3px color-mix(in srgb, var(--void-accent-soft) 70%, transparent);
+	border-color: var(--void-input-focus-border, var(--void-ring));
+	box-shadow: var(--void-input-focus-shadow, 0 0 0 3px color-mix(in srgb, var(--void-accent-soft) 70%, transparent));
 }
 
 .ref-appearance-color-control > input:last-child {
@@ -9650,7 +9921,8 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 
 .ref-settings-field input:focus {
 	outline: none;
-	border-color: var(--void-fg-3);
+	border-color: var(--void-input-focus-border, var(--void-fg-3));
+	box-shadow: var(--void-input-focus-shadow, none);
 }
 
 /* 数字输入：与文本框一致，隐藏系统上下箭头 */
@@ -9706,7 +9978,8 @@ select.ref-settings-native-select:hover:not(:disabled) {
 
 select.ref-settings-native-select:focus {
 	outline: none;
-	border-color: var(--void-fg-3);
+	border-color: var(--void-input-focus-border, var(--void-fg-3));
+	box-shadow: var(--void-input-focus-shadow, none);
 }
 
 .ref-settings-field select.ref-settings-native-select,
@@ -9903,7 +10176,8 @@ select.ref-settings-native-select:focus {
 
 .ref-settings-field textarea:focus {
 	outline: none;
-	border-color: var(--void-fg-3);
+	border-color: var(--void-input-focus-border, var(--void-fg-3));
+	box-shadow: var(--void-input-focus-shadow, none);
 }
 
 .ref-settings-panel--agent {
@@ -10461,8 +10735,9 @@ select.ref-settings-native-select:focus {
 	padding: 0 12px;
 	height: 40px;
 	border-radius: 10px;
-	border: 1px solid var(--void-border);
-	background: var(--void-bg-0);
+	border: 1px solid var(--void-input-border, var(--void-border));
+	background: var(--void-input-bg, var(--void-bg-0));
+	box-shadow: var(--void-input-shadow, none);
 }
 
 .ref-settings-models-search-ico {
@@ -10485,8 +10760,9 @@ select.ref-settings-native-select:focus {
 	width: 40px;
 	height: 40px;
 	border-radius: 10px;
-	border: 1px solid var(--void-border);
-	background: var(--void-bg-0);
+	border: 1px solid var(--void-input-border, var(--void-border));
+	background: var(--void-input-bg, var(--void-bg-0));
+	box-shadow: var(--void-input-shadow, none);
 	color: var(--void-fg-2);
 	cursor: pointer;
 	font-size: 18px;
@@ -11164,17 +11440,18 @@ select.ref-settings-native-select:focus {
 .ref-plan-q-custom-input {
 	width: 100%;
 	padding: 5px 8px;
-	background: #1a1a1a;
-	border: 1px solid #444;
+	background: var(--void-input-bg, #1a1a1a);
+	border: 1px solid var(--void-input-border, #444);
 	border-radius: 5px;
-	color: #d4d4d4;
+	color: var(--void-fg-1, #d4d4d4);
 	font-size: 12.5px;
 	outline: none;
 	transition: border-color 0.12s;
 }
 
 .ref-plan-q-custom-input:focus {
-	border-color: #e8a848;
+	border-color: var(--void-input-focus-border, #e8a848);
+	box-shadow: var(--void-input-focus-shadow, none);
 }
 
 .ref-plan-q-custom-input::placeholder {
@@ -13178,8 +13455,8 @@ select.ref-settings-native-select:focus {
 	margin: 0 10px 8px;
 	padding: 7px 10px;
 	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.02);
-	border: 1px solid var(--void-border-soft);
+	background: var(--void-input-bg, rgba(255, 255, 255, 0.02));
+	border: 1px solid var(--void-input-border, var(--void-border-soft));
 }
 
 .ref-editor-sidebar-search-icon {
@@ -14330,8 +14607,8 @@ select.ref-settings-native-select:focus {
 	margin: 8px 10px 6px;
 	padding: 6px 10px;
 	border-radius: 8px;
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	background: rgba(255, 255, 255, 0.04);
+	border: 1px solid var(--void-input-border, rgba(255, 255, 255, 0.08));
+	background: var(--void-input-bg, rgba(255, 255, 255, 0.04));
 }
 
 .ref-editor-chat-history-search-ico {
@@ -15069,7 +15346,8 @@ select.ref-settings-native-select:focus {
 
 .ref-mcp-edit-field input:focus {
 	outline: none;
-	border-color: var(--void-fg-3);
+	border-color: var(--void-input-focus-border, var(--void-fg-3));
+	box-shadow: var(--void-input-focus-shadow, none);
 }
 
 .ref-mcp-edit-field input[type=checkbox] {

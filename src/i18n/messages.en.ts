@@ -378,6 +378,7 @@ export const messagesEn: Record<string, string> = {
 	'settings.appearance.themePreset': 'Theme preset',
 	'settings.appearance.themePresetDesc': 'Each preset includes matching light and dark colors, and switches automatically with the appearance mode.',
 	'settings.appearance.preset.async': 'Async',
+	'settings.appearance.preset.cursor': 'Cursor',
 	'settings.appearance.preset.graphite': 'Graphite',
 	'settings.appearance.preset.forest': 'Forest',
 	'settings.appearance.preset.sunset': 'Sunset',

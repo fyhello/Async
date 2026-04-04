@@ -380,6 +380,7 @@ export const messagesZhCN: Record<string, string> = {
 	'settings.appearance.themePreset': '主题预设',
 	'settings.appearance.themePresetDesc': '每套预设都包含成对的浅色/深色配色，切换外观模式时会自动匹配。',
 	'settings.appearance.preset.async': 'Async',
+	'settings.appearance.preset.cursor': 'Cursor',
 	'settings.appearance.preset.graphite': '石墨',
 	'settings.appearance.preset.forest': '森林',
 	'settings.appearance.preset.sunset': '暮光',

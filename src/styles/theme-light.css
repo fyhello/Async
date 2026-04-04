@@ -8,13 +8,17 @@
 	--void-fg-1: #354055;
 	--void-fg-2: #5f6d86;
 	--void-fg-3: #8b98ad;
-	--void-accent-glow: rgba(78, 146, 255, 0.2);
-	--void-accent-soft: rgba(78, 146, 255, 0.1);
+	--void-accent-cool: #418eff;
+	--void-accent-warm: #f97316;
+	--void-accent-cool-soft: color-mix(in srgb, var(--void-accent-cool) 16%, transparent);
+	--void-accent-warm-soft: color-mix(in srgb, var(--void-accent-warm) 14%, transparent);
+	--void-accent-glow: color-mix(in srgb, var(--void-accent-cool) 20%, transparent);
+	--void-accent-soft: color-mix(in srgb, var(--void-accent-cool) 10%, transparent);
 	--void-thought-meta: #7e8aa0;
 	--void-thought-body: #314059;
 	--void-thought-detail: #5b6980;
-	--void-border: rgba(93, 109, 136, 0.18);
-	--void-border-soft: rgba(79, 93, 122, 0.09);
+	--void-border: color-mix(in srgb, var(--void-fg-2) 18%, transparent);
+	--void-border-soft: color-mix(in srgb, var(--void-fg-2) 9%, transparent);
 	--void-ring: #418eff;
 	--void-accent-assist: #3d62c4;
 	--void-git-untracked: #1d8f5f;
@@ -22,35 +26,67 @@
 	--void-git-added: #228b60;
 	--void-git-deleted: #d65055;
 	--void-git-ignored: #9aa6ba;
-	--void-scrollbar-track: rgba(229, 235, 245, 0.78);
-	--void-scrollbar-thumb: rgba(123, 137, 160, 0.38);
-	--void-scrollbar-thumb-hover: rgba(98, 113, 139, 0.5);
-	--void-scrollbar-thumb-active: rgba(82, 96, 120, 0.58);
-	--ref-menubar-chrome-bg: rgba(240, 244, 250, 0.86);
-	--void-sidebar-fill: rgba(245, 247, 251, 0.78);
-	--void-shadow-card: 0 24px 72px rgba(31, 45, 72, 0.14);
-	--void-shadow-soft: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+	--void-scrollbar-track: color-mix(in srgb, var(--void-bg-1) 78%, transparent);
+	--void-scrollbar-thumb: color-mix(in srgb, var(--void-fg-3) 38%, transparent);
+	--void-scrollbar-thumb-hover: color-mix(in srgb, var(--void-fg-2) 50%, transparent);
+	--void-scrollbar-thumb-active: color-mix(in srgb, var(--void-fg-2) 58%, transparent);
+	--ref-menubar-chrome-bg: color-mix(in srgb, var(--void-bg-1) 86%, transparent);
+	--void-sidebar-fill: color-mix(in srgb, var(--void-bg-1) 78%, transparent);
+	--void-shadow-card: 0 24px 72px color-mix(in srgb, var(--void-fg-0) 14%, transparent);
+	--void-shadow-soft: inset 0 1px 0 color-mix(in srgb, var(--void-bg-0) 94%, var(--void-fg-0) 6%);
 
-	--surface-panel-bg: rgba(245, 247, 251, 0.84);
-	--surface-panel-bg-strong: rgba(239, 243, 249, 0.92);
-	--surface-panel-bg-soft: rgba(234, 239, 247, 0.88);
-	--surface-glass-stroke: rgba(102, 120, 149, 0.14);
-	--surface-tint-soft: rgba(65, 142, 255, 0.08);
-	--surface-tint-strong: rgba(65, 142, 255, 0.13);
-	--surface-search-bg: rgba(236, 241, 248, 0.84);
-	--shadow-floating: 0 24px 70px rgba(31, 45, 72, 0.14);
-	--shadow-toolbar: 0 1px 0 rgba(255, 255, 255, 0.82), 0 16px 42px rgba(31, 45, 72, 0.12);
-	--shadow-pressed: inset 0 1px 0 rgba(255, 255, 255, 0.84);
-	--surface-popover-bg: rgba(244, 247, 252, 0.95);
-	--surface-control-bg: rgba(235, 240, 247, 0.94);
-	--surface-control-bg-hover: rgba(228, 235, 245, 0.96);
-	--surface-control-bg-active: rgba(219, 229, 242, 0.98);
-	--surface-code-bg: rgba(243, 247, 252, 0.96);
-	--surface-card-bg: linear-gradient(180deg, rgba(243, 246, 251, 0.96) 0%, rgba(236, 241, 248, 0.96) 100%);
-	--surface-card-bg-soft: linear-gradient(180deg, rgba(237, 242, 249, 0.96) 0%, rgba(231, 237, 246, 0.96) 100%);
+	--surface-panel-bg: color-mix(in srgb, var(--void-bg-1) 84%, transparent);
+	--surface-panel-bg-strong: color-mix(in srgb, var(--void-bg-1) 98%, transparent);
+	--surface-panel-bg-soft: color-mix(in srgb, var(--void-bg-2) 88%, transparent);
+	--surface-glass-stroke: color-mix(in srgb, var(--void-fg-0) 14%, transparent);
+	--surface-tint-soft: color-mix(in srgb, var(--void-accent-cool) 8%, transparent);
+	--surface-tint-strong: color-mix(in srgb, var(--void-accent-cool) 13%, transparent);
+	--surface-search-bg: color-mix(in srgb, var(--void-bg-2) 84%, transparent);
+	--shadow-floating: 0 24px 70px color-mix(in srgb, var(--void-fg-0) 14%, transparent);
+	--shadow-toolbar:
+		0 1px 0 color-mix(in srgb, var(--void-bg-0) 88%, var(--void-fg-0) 12%),
+		0 16px 42px color-mix(in srgb, var(--void-fg-0) 12%, transparent);
+	--shadow-pressed: inset 0 1px 0 color-mix(in srgb, var(--void-bg-0) 90%, var(--void-fg-0) 10%);
+	--surface-popover-bg: color-mix(in srgb, var(--void-bg-1) 95%, transparent);
+	--surface-control-bg: color-mix(in srgb, var(--void-bg-2) 94%, transparent);
+	--surface-control-bg-hover: color-mix(in srgb, color-mix(in srgb, var(--void-bg-2) 85%, var(--void-fg-0) 15%) 96%, transparent);
+	--surface-control-bg-active: color-mix(in srgb, color-mix(in srgb, var(--void-bg-2) 78%, var(--void-fg-0) 22%) 98%, transparent);
+	--surface-code-bg: color-mix(in srgb, var(--void-bg-1) 96%, transparent);
+	--surface-bubble-user: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--void-bg-1) 96%, transparent) 0%,
+		color-mix(in srgb, var(--void-bg-2) 96%, transparent) 100%
+	);
+	--surface-card-bg: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--void-bg-1) 96%, transparent) 0%,
+		color-mix(in srgb, var(--void-bg-2) 96%, transparent) 100%
+	);
+	--surface-card-bg-soft: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--void-bg-2) 96%, transparent) 0%,
+		color-mix(in srgb, color-mix(in srgb, var(--void-bg-2) 55%, var(--void-bg-0) 45%) 96%, transparent) 100%
+	);
 	--app-backdrop:
-		radial-gradient(circle at top center, rgba(65, 142, 255, 0.1) 0%, transparent 34%),
-		radial-gradient(circle at 10% 18%, rgba(56, 189, 248, 0.08) 0%, transparent 22%),
-		radial-gradient(circle at 86% 12%, rgba(167, 139, 250, 0.08) 0%, transparent 24%),
-		linear-gradient(180deg, #f0f4fa 0%, #e8edf5 48%, #e4eaf3 100%);
+		radial-gradient(
+			circle at top center,
+			color-mix(in srgb, var(--void-accent-cool) 10%, transparent) 0%,
+			transparent 34%
+		),
+		radial-gradient(
+			circle at 10% 18%,
+			color-mix(in srgb, var(--void-accent-cool) 8%, transparent) 0%,
+			transparent 22%
+		),
+		radial-gradient(
+			circle at 86% 12%,
+			color-mix(in srgb, var(--void-accent-warm) 8%, transparent) 0%,
+			transparent 24%
+		),
+		linear-gradient(
+			180deg,
+			color-mix(in srgb, var(--void-bg-1) 55%, var(--void-bg-0) 45%) 0%,
+			var(--void-bg-0) 48%,
+			color-mix(in srgb, var(--void-bg-0) 92%, var(--void-fg-0) 8%) 100%
+		);
 }
