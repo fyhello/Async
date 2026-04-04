@@ -351,10 +351,21 @@ export function buildAgentSystemAppend(opts: {
 	const subs = (agent?.subagents ?? []).filter((s) => s.enabled !== false);
 	if (subs.length > 0) {
 		const body = subs
-			.map((s) => `##### Subagent: ${s.name}\n- ${s.description}\n\n${s.instructions}`)
+			.map((s) =>
+				[
+					`##### Subagent: ${s.name}`,
+					`- ${s.description}`,
+					s.memoryScope ? `- Persistent memory: ${s.memoryScope}` : '',
+					'',
+					s.instructions,
+				]
+					.filter(Boolean)
+					.join('\n')
+			)
 			.join('\n\n');
-		parts.push(`#### Subagents\n在任务适合时可按下列角色组织回答：\n\n${body}`);
+		parts.push(`#### Subagents\n?????????????????\n\n${body}`);
 	}
+
 
 	return parts.join('\n\n');
 }

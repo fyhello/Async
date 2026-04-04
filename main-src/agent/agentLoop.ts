@@ -155,6 +155,8 @@ export type AgentLoopHandlers = {
 };
 
 export type AgentLoopOptions = {
+	/** UI 里实际选中的模型条目 id；用于 memory recall/extraction 等旁路调用 */
+	modelSelection?: string;
 	requestModelId: string;
 	paradigm: ModelRequestParadigm;
 	/** 与 UnifiedChatOptions 一致：已由 modelResolve 解析 */

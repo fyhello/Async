@@ -1,6 +1,7 @@
 /** 与主进程 `settingsStore` 中 `agent` 字段结构一致（供设置 UI 使用） */
 
 export type AgentItemOrigin = 'user' | 'project';
+export type AgentMemoryScope = 'user' | 'project' | 'local';
 
 export type AgentRuleScope = 'always' | 'glob' | 'manual';
 
@@ -34,6 +35,7 @@ export type AgentSubagent = {
 	name: string;
 	description: string;
 	instructions: string;
+	memoryScope?: AgentMemoryScope;
 	enabled?: boolean;
 	origin?: AgentItemOrigin;
 };

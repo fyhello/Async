@@ -20,9 +20,12 @@ import { appendSubagentTranscript } from '../threadStore.js';
 import { assembleAgentToolPool } from './agentToolPool.js';
 import { executeAskPlanQuestionTool } from './planQuestionTool.js';
 import type { ComposerMode } from '../llm/composerMode.js';
-import { buildSubagentSystemAppend, resolveSubagentProfile } from './subagentProfile.js';
+import { buildSubagentSystemAppend, findConfiguredSubagent, resolveSubagentProfile } from './subagentProfile.js';
 import { shouldRunAgentInBackground } from './agentForkPolicy.js';
 import { windowsCmdUtf8Prefix, windowsPowerShellUtf8Command } from '../winUtf8.js';
+import { ensureAgentMemoryDirExists, loadAgentMemoryPrompt } from './agentMemory.js';
+import { buildRelevantMemoryContextBlock } from '../memdir/findRelevantMemories.js';
+import { extractMemoriesToDir } from '../services/extractMemories/extractMemories.js';
 
 /** 工具执行器持有的 LSP 会话引用（由 register.ts 通过 setToolLspSession 注入）。 */
 let _lspSession: TsLspSession | null = null;
@@ -649,7 +652,7 @@ async function executeAgentDelegate(call: ToolCall, execCtx: ToolExecutionContex
 	const profile = resolveSubagentProfile(subagentType);
 	const subComposerMode: ComposerMode = profile === 'explore' ? 'plan' : prevCtx.options.composerMode;
 	const subAppend = buildSubagentSystemAppend(prevCtx.settings, subagentType);
-	const mergedAppend = [prevCtx.options.agentSystemAppend?.trim(), subAppend?.trim()].filter(Boolean).join('\n\n');
+	const matchedSubagent = findConfiguredSubagent(prevCtx.settings, subagentType);
 
 	let baseToolDefs = assembleAgentToolPool(subComposerMode, {
 		mcpToolDenyPrefixes: prevCtx.settings.mcpToolDenyPrefixes,
@@ -673,6 +676,42 @@ async function executeAgentDelegate(call: ToolCall, execCtx: ToolExecutionContex
 	const runSubAgent = async (): Promise<{ output: string; errorMsg: string }> => {
 		let output = '';
 		let errorMsg = '';
+		let agentMemoryAppend = '';
+		let agentMemoryDir: string | null = null;
+		if (matchedSubagent?.memoryScope && subagentType) {
+			try {
+				agentMemoryDir = await ensureAgentMemoryDirExists(subagentType, matchedSubagent.memoryScope, getWorkspaceRoot());
+				agentMemoryAppend =
+					loadAgentMemoryPrompt(subagentType, matchedSubagent.memoryScope, getWorkspaceRoot())?.trim() ?? '';
+			} catch {
+				agentMemoryAppend = '';
+				agentMemoryDir = null;
+			}
+		}
+		let relevantAgentMemories = '';
+		if (agentMemoryDir) {
+			try {
+				const agentQuery = `${task}\n\n${context}`.trim();
+				relevantAgentMemories =
+					(await buildRelevantMemoryContextBlock({
+						query: agentQuery,
+						settings: prevCtx.settings,
+						modelSelection: prevCtx.options.modelSelection ?? '',
+						memoryDirOverride: agentMemoryDir,
+						label: 'Relevant agent memories',
+					})) ?? '';
+			} catch {
+				relevantAgentMemories = '';
+			}
+		}
+		const mergedAppend = [
+			prevCtx.options.agentSystemAppend?.trim(),
+			subAppend?.trim(),
+			agentMemoryAppend,
+			relevantAgentMemories.trim(),
+		]
+			.filter(Boolean)
+			.join('\n\n');
 		const handlers: AgentLoopHandlers = {
 			onTextDelta: (text) => {
 				output += text;
@@ -758,6 +797,24 @@ async function executeAgentDelegate(call: ToolCall, execCtx: ToolExecutionContex
 				},
 				handlers
 			);
+			if (!errorMsg && agentMemoryDir) {
+				await extractMemoriesToDir({
+					memoryDir: agentMemoryDir,
+					workspaceRootForEntrypoint: null,
+					messages: [
+						subMessages[0]!,
+						{ role: 'assistant', content: output || '(sub-agent completed with no output)' },
+					],
+					runtimeModel: {
+						requestModelId: prevCtx.options.requestModelId,
+						paradigm: prevCtx.options.paradigm,
+						requestApiKey: prevCtx.options.requestApiKey,
+						requestBaseURL: prevCtx.options.requestBaseURL,
+						requestProxyUrl: prevCtx.options.requestProxyUrl,
+						thinkingLevel: prevCtx.options.thinkingLevel,
+					},
+				});
+			}
 		} catch (e) {
 			errorMsg = String(e);
 		}

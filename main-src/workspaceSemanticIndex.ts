@@ -121,6 +121,14 @@ function isCodeRel(rel: string): boolean {
 	return CODE_EXT.has(ext);
 }
 
+function isSemanticEligibleRel(rel: string): boolean {
+	const normalized = rel.replace(/\\/g, '/');
+	if (normalized === '.async/memory/MEMORY.md' || normalized.startsWith('.async/memory/')) {
+		return false;
+	}
+	return isCodeRel(normalized);
+}
+
 function tokenize(text: string): string[] {
 	const out: string[] = [];
 	const lower = text.toLowerCase();
@@ -189,7 +197,7 @@ async function rebuildInternal(rootNorm: string, relativeFiles: string[]): Promi
 	if (getSettings().indexing?.semanticIndexEnabled === false) {
 		return;
 	}
-	const codeFiles = relativeFiles.filter(isCodeRel);
+	const codeFiles = relativeFiles.filter(isSemanticEligibleRel);
 
 	// 按最近修改时间降序排序，优先索引活跃文件（避免大仓固定前缀截断遗漏重要文件）
 	// 先并发 stat 前 5000 个，再取 top 2500

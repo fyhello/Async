@@ -120,6 +120,9 @@ import {
 	scheduleWorkspaceSemanticRebuild,
 } from '../workspaceSemanticIndex.js';
 import { getGitContextBlock, clearGitContextCache } from '../gitContext.js';
+import { buildRelevantMemoryContextBlock } from '../memdir/findRelevantMemories.js';
+import { loadMemoryPrompt } from '../memdir/memdir.js';
+import { queueExtractMemories } from '../services/extractMemories/extractMemories.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -137,6 +140,68 @@ function buildEnrichedQuery(userText: string, threadMessages: ChatMessage[]): st
 		.map((m) => m.content.slice(0, 200))
 		.join(' ');
 	return `${userText} ${recentUserTexts}`.slice(0, 1000);
+}
+
+function appendSystemBlock(base: string | undefined, block: string): string {
+	const trimmed = block.trim();
+	if (!trimmed) {
+		return base ?? '';
+	}
+	return base && base.trim() ? `${base}\n\n---\n${trimmed}` : trimmed;
+}
+
+async function appendMemoryAndRetrievalContext(params: {
+	base: string | undefined;
+	mode: ComposerMode;
+	settings: ReturnType<typeof getSettings>;
+	root: string | null;
+	threadId: string;
+	userText: string;
+	atPaths: string[];
+	modelSelection: string;
+}): Promise<string> {
+	let next = params.base ?? '';
+
+	if ((params.mode === 'agent' || params.mode === 'debug') && params.root) {
+		const memoryPrompt = await loadMemoryPrompt(params.root);
+		if (memoryPrompt) {
+			next = appendSystemBlock(next, memoryPrompt);
+		}
+	}
+
+	if (modeExpandsWorkspaceFileContext(params.mode) && params.userText.trim().length > 8) {
+		const recentPaths = Object.keys(getThread(params.threadId)?.fileStates ?? {});
+		const enrichedQuery = buildEnrichedQuery(params.userText, getThread(params.threadId)?.messages ?? []);
+		const sem = buildSemanticContextBlock(
+			enrichedQuery,
+			6,
+			recentPaths,
+			params.atPaths.length > 0 ? params.atPaths : undefined
+		);
+		if (sem) {
+			next = appendSystemBlock(next, sem);
+		}
+		if (params.root) {
+			const relevantMemories = await buildRelevantMemoryContextBlock({
+				query: enrichedQuery,
+				settings: params.settings,
+				modelSelection: params.modelSelection,
+				workspaceRoot: params.root,
+			});
+			if (relevantMemories) {
+				next = appendSystemBlock(next, relevantMemories);
+			}
+		}
+	}
+
+	if (modeExpandsWorkspaceFileContext(params.mode) && params.root && params.settings.indexing?.gitContextEnabled !== false) {
+		const gitBlock = await getGitContextBlock(params.root);
+		if (gitBlock) {
+			next = appendSystemBlock(next, gitBlock);
+		}
+	}
+
+	return next;
 }
 
 const abortByThread = new Map<string, AbortController>();
@@ -164,6 +229,7 @@ function runChatStream(
 	void (async () => {
 		try {
 			const settings = getSettings();
+			const workspaceRoot = getWorkspaceRoot();
 			const thinkingLevel = resolveThinkingLevelForSelection(settings, modelSelection);
 			const resolved = resolveModelRequest(settings, modelSelection);
 			if (!resolved.ok) {
@@ -210,8 +276,9 @@ function runChatStream(
 					ac.signal,
 					mistakeLimitWaiters
 				);
-				const ag = getSettings().agent;
+			const ag = getSettings().agent;
 			const agentOptions = {
+					modelSelection,
 					requestModelId: resolved.requestModelId,
 					paradigm: resolved.paradigm,
 					requestApiKey: resolved.apiKey,
@@ -258,6 +325,7 @@ function runChatStream(
 					settings,
 					messagesForAgent,
 					{
+						modelSelection,
 						requestModelId: resolved.requestModelId,
 						paradigm: resolved.paradigm,
 						requestApiKey: resolved.apiKey,
@@ -303,6 +371,12 @@ function runChatStream(
 						onDone: (full, usage) => {
 							updateLastAssistant(threadId, full);
 							accumulateTokenUsage(threadId, usage?.inputTokens, usage?.outputTokens);
+							queueExtractMemories({
+								threadId,
+								workspaceRoot,
+								settings,
+								modelSelection,
+							});
 							send({ threadId, type: 'done', text: full, usage });
 						},
 						onError: (message) => send({ threadId, type: 'error', message }),
@@ -338,6 +412,12 @@ function runChatStream(
 				onDone: (full, usage) => {
 					updateLastAssistant(threadId, full);
 					accumulateTokenUsage(threadId, usage?.inputTokens, usage?.outputTokens);
+					queueExtractMemories({
+						threadId,
+						workspaceRoot,
+						settings,
+						modelSelection,
+					});
 					if (mode === 'agent') {
 						const listed = listAgentDiffChunks(flattenAssistantTextPartsForSearch(full));
 						if (listed.length > 0) {
@@ -1052,33 +1132,19 @@ export function registerIpc(): void {
 				if (workspaceFiles.length > 0) {
 					const tree = buildWorkspaceTreeSummary(workspaceFiles);
 					if (tree) {
-						finalSystemAppend = finalSystemAppend
-							? `${finalSystemAppend}\n\n---\n${tree}`
-							: tree;
+						finalSystemAppend = appendSystemBlock(finalSystemAppend, tree);
 					}
 				}
-				if (modeExpandsWorkspaceFileContext(creatorAgentMode) && prepared.userText.trim().length > 8) {
-					const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
-					const enrichedQuery = buildEnrichedQuery(
-						prepared.userText,
-						getThread(threadId)?.messages ?? []
-					);
-					const sem = buildSemanticContextBlock(
-						enrichedQuery,
-						6,
-						recentPaths,
-						prepared.atPaths.length > 0 ? prepared.atPaths : undefined
-					);
-					if (sem) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
-					}
-				}
-				if (modeExpandsWorkspaceFileContext(creatorAgentMode) && root && settings.indexing?.gitContextEnabled !== false) {
-					const gitBlock = await getGitContextBlock(root);
-					if (gitBlock) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
-					}
-				}
+				finalSystemAppend = await appendMemoryAndRetrievalContext({
+					base: finalSystemAppend,
+					mode: creatorAgentMode,
+					settings,
+					root,
+					threadId,
+					userText: prepared.userText,
+					atPaths: prepared.atPaths,
+					modelSelection,
+				});
 				finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute);
 				const t = appendMessage(threadId, { role: 'user', content: visible });
 				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend);
@@ -1104,33 +1170,19 @@ export function registerIpc(): void {
 				if (workspaceFiles.length > 0) {
 					const tree = buildWorkspaceTreeSummary(workspaceFiles);
 					if (tree) {
-						finalSystemAppend = finalSystemAppend
-							? `${finalSystemAppend}\n\n---\n${tree}`
-							: tree;
+						finalSystemAppend = appendSystemBlock(finalSystemAppend, tree);
 					}
 				}
-				if (modeExpandsWorkspaceFileContext(creatorAgentMode) && prepared.userText.trim().length > 8) {
-					const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
-					const enrichedQuery = buildEnrichedQuery(
-						prepared.userText,
-						getThread(threadId)?.messages ?? []
-					);
-					const sem = buildSemanticContextBlock(
-						enrichedQuery,
-						6,
-						recentPaths,
-						prepared.atPaths.length > 0 ? prepared.atPaths : undefined
-					);
-					if (sem) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
-					}
-				}
-				if (modeExpandsWorkspaceFileContext(creatorAgentMode) && root && settings.indexing?.gitContextEnabled !== false) {
-					const gitBlock = await getGitContextBlock(root);
-					if (gitBlock) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
-					}
-				}
+				finalSystemAppend = await appendMemoryAndRetrievalContext({
+					base: finalSystemAppend,
+					mode: creatorAgentMode,
+					settings,
+					root,
+					threadId,
+					userText: prepared.userText,
+					atPaths: prepared.atPaths,
+					modelSelection,
+				});
 				finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute);
 				finalSystemAppend = appendRuleCreatorPathLock(
 					finalSystemAppend,
@@ -1163,33 +1215,19 @@ export function registerIpc(): void {
 				if (workspaceFiles.length > 0) {
 					const tree = buildWorkspaceTreeSummary(workspaceFiles);
 					if (tree) {
-						finalSystemAppend = finalSystemAppend
-							? `${finalSystemAppend}\n\n---\n${tree}`
-							: tree;
+						finalSystemAppend = appendSystemBlock(finalSystemAppend, tree);
 					}
 				}
-				if (modeExpandsWorkspaceFileContext(creatorAgentMode) && prepared.userText.trim().length > 8) {
-					const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
-					const enrichedQuery = buildEnrichedQuery(
-						prepared.userText,
-						getThread(threadId)?.messages ?? []
-					);
-					const sem = buildSemanticContextBlock(
-						enrichedQuery,
-						6,
-						recentPaths,
-						prepared.atPaths.length > 0 ? prepared.atPaths : undefined
-					);
-					if (sem) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
-					}
-				}
-				if (modeExpandsWorkspaceFileContext(creatorAgentMode) && root && settings.indexing?.gitContextEnabled !== false) {
-					const gitBlock = await getGitContextBlock(root);
-					if (gitBlock) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
-					}
-				}
+				finalSystemAppend = await appendMemoryAndRetrievalContext({
+					base: finalSystemAppend,
+					mode: creatorAgentMode,
+					settings,
+					root,
+					threadId,
+					userText: prepared.userText,
+					atPaths: prepared.atPaths,
+					modelSelection,
+				});
 				finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute);
 				const t = appendMessage(threadId, { role: 'user', content: visible });
 				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend);
@@ -1211,27 +1249,19 @@ export function registerIpc(): void {
 			if ((mode === 'plan' || mode === 'ask') && workspaceFiles.length > 0) {
 				const tree = buildWorkspaceTreeSummary(workspaceFiles);
 				if (tree) {
-					finalSystemAppend = finalSystemAppend
-						? `${finalSystemAppend}\n\n---\n${tree}`
-						: tree;
+					finalSystemAppend = appendSystemBlock(finalSystemAppend, tree);
 				}
 			}
-
-			if (modeExpandsWorkspaceFileContext(mode) && userText.trim().length > 8) {
-				const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
-				const enrichedQuery = buildEnrichedQuery(userText, getThread(threadId)?.messages ?? []);
-				const sem = buildSemanticContextBlock(enrichedQuery, 6, recentPaths, atPaths.length > 0 ? atPaths : undefined);
-				if (sem) {
-					finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
-				}
-			}
-
-			if (modeExpandsWorkspaceFileContext(mode) && root && settings.indexing?.gitContextEnabled !== false) {
-				const gitBlock = await getGitContextBlock(root);
-				if (gitBlock) {
-					finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
-				}
-			}
+			finalSystemAppend = await appendMemoryAndRetrievalContext({
+				base: finalSystemAppend,
+				mode,
+				settings,
+				root,
+				threadId,
+				userText,
+				atPaths,
+				modelSelection,
+			});
 
 			finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute);
 
@@ -1289,27 +1319,19 @@ export function registerIpc(): void {
 				if ((mode === 'plan' || mode === 'ask') && workspaceFiles.length > 0) {
 					const tree = buildWorkspaceTreeSummary(workspaceFiles);
 					if (tree) {
-						finalSystemAppend = finalSystemAppend
-							? `${finalSystemAppend}\n\n---\n${tree}`
-							: tree;
+						finalSystemAppend = appendSystemBlock(finalSystemAppend, tree);
 					}
 				}
-
-				if (modeExpandsWorkspaceFileContext(mode) && userText.trim().length > 8) {
-					const recentPaths = Object.keys(getThread(threadId)?.fileStates ?? {});
-					const enrichedQuery = buildEnrichedQuery(userText, getThread(threadId)?.messages ?? []);
-					const sem = buildSemanticContextBlock(enrichedQuery, 6, recentPaths, atPaths.length > 0 ? atPaths : undefined);
-					if (sem) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${sem}` : sem;
-					}
-				}
-
-				if (modeExpandsWorkspaceFileContext(mode) && root && getSettings().indexing?.gitContextEnabled !== false) {
-					const gitBlock = await getGitContextBlock(root);
-					if (gitBlock) {
-						finalSystemAppend = finalSystemAppend ? `${finalSystemAppend}\n\n---\n${gitBlock}` : gitBlock;
-					}
-				}
+				finalSystemAppend = await appendMemoryAndRetrievalContext({
+					base: finalSystemAppend,
+					mode,
+					settings,
+					root,
+					threadId,
+					userText,
+					atPaths,
+					modelSelection,
+				});
 
 				const t = replaceFromUserVisibleIndex(threadId, visibleIndex, userText);
 				runChatStream(win, threadId, t.messages, mode, modelSelection, finalSystemAppend);

@@ -1,6 +1,7 @@
 /** 与渲染端 `src/agentSettingsTypes.ts` 保持字段一致 */
 
 export type AgentItemOrigin = 'user' | 'project';
+export type AgentMemoryScope = 'user' | 'project' | 'local';
 
 export type AgentRuleScope = 'always' | 'glob' | 'manual';
 
@@ -32,6 +33,7 @@ export type AgentSubagent = {
 	name: string;
 	description: string;
 	instructions: string;
+	memoryScope?: AgentMemoryScope;
 	enabled?: boolean;
 	origin?: AgentItemOrigin;
 };

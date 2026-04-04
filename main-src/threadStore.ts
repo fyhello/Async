@@ -32,6 +32,7 @@ export type ThreadRecord = {
 	fileStates?: Record<string, FileState>;
 	summary?: string;
 	summaryCoversMessageCount?: number;
+	memoryExtractedMessageCount?: number;
 	plan?: ThreadPlan;
 	executedPlanFileKeys?: string[];
 };
@@ -381,6 +382,21 @@ export function saveSummary(threadId: string, summary: string, coversCount: numb
 	}
 	thread.summary = summary;
 	thread.summaryCoversMessageCount = coversCount;
+	save();
+}
+
+export function getMemoryExtractedMessageCount(threadId: string): number {
+	const thread = getThread(threadId);
+	return Math.max(0, Number(thread?.memoryExtractedMessageCount ?? 0) || 0);
+}
+
+export function saveMemoryExtractedMessageCount(threadId: string, count: number): void {
+	const thread = getThread(threadId);
+	if (!thread) {
+		return;
+	}
+	thread.memoryExtractedMessageCount = Math.max(0, Math.floor(count));
+	thread.updatedAt = Date.now();
 	save();
 }
 

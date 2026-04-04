@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 const DIR = 'async';
 const LEGACY = 'void-shell';
+let cachedAsyncDataDir = '';
 
 /** 应用数据目录；若仅有旧版 void-shell 目录则一次性复制到 async，避免丢设置与线程。 */
 export function resolveAsyncDataDir(userData: string): string {
@@ -16,5 +18,16 @@ export function resolveAsyncDataDir(userData: string): string {
 		}
 	}
 	fs.mkdirSync(dir, { recursive: true });
+	cachedAsyncDataDir = dir;
 	return dir;
+}
+
+export function getCachedAsyncDataDir(): string {
+	if (cachedAsyncDataDir) {
+		return cachedAsyncDataDir;
+	}
+	const fallback = path.join(os.homedir(), `.${DIR}`);
+	fs.mkdirSync(fallback, { recursive: true });
+	cachedAsyncDataDir = fallback;
+	return cachedAsyncDataDir;
 }

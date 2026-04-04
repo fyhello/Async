@@ -4,6 +4,7 @@ import type {
 	AgentCommand,
 	AgentCustomization,
 	AgentItemOrigin,
+	AgentMemoryScope,
 	AgentRule,
 	AgentRuleScope,
 	AgentSkill,
@@ -239,6 +240,16 @@ export function SettingsAgentPanel({
 		patch({ subagents: subagents.filter((x) => x.id !== id) });
 	};
 	const subsDrag = useDragReorder(subagents, (next) => patch({ subagents: next }));
+	const subagentMemoryOptions: Array<{ value: AgentMemoryScope | 'none'; label: string }> = [
+		{ value: 'none', label: t('agentSettings.subMemoryNone') },
+		{ value: 'user', label: t('agentSettings.subMemoryUser') },
+		{ value: 'project', label: t('agentSettings.subMemoryProject') },
+		{ value: 'local', label: t('agentSettings.subMemoryLocal') },
+	];
+	const getSubagentMemoryLabel = (scope?: AgentMemoryScope): string | null => {
+		if (!scope) return null;
+		return subagentMemoryOptions.find((opt) => opt.value === scope)?.label ?? scope;
+	};
 
 	// ─── Commands ─────────────────────────────────────────
 	const addCmd = () => {
@@ -729,6 +740,7 @@ export function SettingsAgentPanel({
 				<ul className="ref-settings-agent-list">
 					{subagents.filter((s) => itemMatchesLibraryFilter(s, libraryFilter)).map((s) => {
 						const collapsed = collapsedSubs.has(s.id);
+						const memoryLabel = getSubagentMemoryLabel(s.memoryScope);
 						return (
 							<li
 								key={s.id}
@@ -754,6 +766,14 @@ export function SettingsAgentPanel({
 										<span className="ref-settings-toggle-knob" />
 									</button>
 									{renderOriginBadge(s.origin)}
+									{memoryLabel ? (
+										<span
+											className="ref-settings-agent-memory-badge"
+											title={`${t('agentSettings.subMemoryScope')}: ${memoryLabel}`}
+										>
+											{memoryLabel}
+										</span>
+									) : null}
 									<input
 										className="ref-settings-agent-item-name"
 										value={s.name}
@@ -792,6 +812,19 @@ export function SettingsAgentPanel({
 												onChange={(e) => updateSub(s.id, { description: e.target.value })}
 												placeholder={t('agentSettings.subDescPh')}
 											/>
+										</label>
+										<label className="ref-settings-field ref-settings-field--compact">
+											<span>{t('agentSettings.subMemoryScope')}</span>
+											<VoidSelect
+												value={s.memoryScope ?? 'none'}
+												onChange={(v) =>
+													updateSub(s.id, {
+														memoryScope: v === 'none' ? undefined : (v as AgentMemoryScope),
+													})
+												}
+												options={subagentMemoryOptions}
+											/>
+											<small className="ref-settings-field-hint">{t('agentSettings.subMemoryScopeHint')}</small>
 										</label>
 										<label className="ref-settings-field ref-settings-field--compact">
 											<span>{t('agentSettings.subInstr')}</span>

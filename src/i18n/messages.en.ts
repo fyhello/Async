@@ -623,7 +623,7 @@ export const messagesEn: Record<string, string> = {
 	'slashCmd.createRuleDesc':
 		'Create a Rule: after scope pick, switches to Agent so the assistant writes `.async/rules/*.mdc` (not chat-only paste).',
 	'slashCmd.createSubagentDesc':
-		'Create a Subagent: pick scope, then Agent mode—prefer updating `.async/agent.json` (etc.) with tools.',
+		'Create a Subagent: pick scope, then Agent mode—prefer updating `.async/agent.json` (etc.) with tools, with optional persistent memory.',
 	'slashCmd.helpTitle': 'Slash commands',
 	'slashCmd.helpEmpty': 'No commands',
 	'slashCmd.helpBuiltin': 'Built-in',
@@ -649,7 +649,7 @@ export const messagesEn: Record<string, string> = {
 	'subagentWizard.scopeAria': 'Choose subagent storage scope',
 	'subagentWizard.scopeTitle': 'Where should this subagent live?',
 	'subagentWizard.scopeDesc':
-		'After you continue, the app switches to Agent; with a workspace open, the assistant should persist subagent config via tools—not only paste in chat.',
+		'After you continue, the app switches to Agent; with a workspace open, the assistant should persist subagent config via tools—not only paste in chat. It may also add an optional persistent memory scope.',
 	'subagentWizard.scopeAllProjects': 'All projects (user-level)',
 	'subagentWizard.scopeAllHint': 'Global subagents in Async settings.',
 	'subagentWizard.scopeThisProject': 'This project',
@@ -708,6 +708,12 @@ export const messagesEn: Record<string, string> = {
 	'agentSettings.subNameAria': 'Subagent name',
 	'agentSettings.subDesc': 'Description',
 	'agentSettings.subDescPh': 'When this role fits',
+	'agentSettings.subMemoryScope': 'Persistent memory',
+	'agentSettings.subMemoryScopeHint': 'Optional. Give this subagent its own memory directory and recall/extraction loop.',
+	'agentSettings.subMemoryNone': 'None',
+	'agentSettings.subMemoryUser': 'User scope',
+	'agentSettings.subMemoryProject': 'Project scope',
+	'agentSettings.subMemoryLocal': 'Local scope',
 	'agentSettings.subInstr': 'Instructions',
 	'agentSettings.subInstrPh': 'Behavior and output requirements…',
 	'agentSettings.subEmpty': 'No subagents yet.',

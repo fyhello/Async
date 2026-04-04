@@ -2,6 +2,7 @@
  * 子 Agent 类型解析：对齐 Claude Code 的 subagent_type + 设置中的 AgentSubagent。
  */
 
+import type { AgentSubagent } from '../agentSettingsTypes.js';
 import type { ShellSettings } from '../settingsStore.js';
 
 export type SubagentRunProfile = 'explore' | 'full';
@@ -16,6 +17,24 @@ export function resolveSubagentProfile(rawType: string | undefined): SubagentRun
 	if (!t) return 'full';
 	if (EXPLORE_ALIASES.has(t)) return 'explore';
 	return 'full';
+}
+
+export function findConfiguredSubagent(
+	settings: ShellSettings,
+	rawType: string | undefined
+): AgentSubagent | undefined {
+	const t = (rawType ?? '').trim();
+	const lower = t.toLowerCase().replace(/\s+/g, '_');
+	if (!t) return undefined;
+
+	const subs = settings.agent?.subagents ?? [];
+	return subs.find(
+		(s) =>
+			s.enabled !== false &&
+			(s.id === t ||
+				s.name.trim().toLowerCase() === t.toLowerCase() ||
+				s.name.trim().toLowerCase().replace(/\s+/g, '_') === lower)
+	);
 }
 
 /**
@@ -34,16 +53,17 @@ export function buildSubagentSystemAppend(settings: ShellSettings, rawType: stri
 		].join('\n');
 	}
 
-	const subs = settings.agent?.subagents ?? [];
-	const match = subs.find(
-		(s) =>
-			s.enabled !== false &&
-			(s.id === t ||
-				s.name.trim().toLowerCase() === t.toLowerCase() ||
-				s.name.trim().toLowerCase().replace(/\s+/g, '_') === lower)
-	);
+	const match = findConfiguredSubagent(settings, rawType);
 	if (match) {
-		return [`## Subagent: ${match.name}`, match.description.trim(), '', match.instructions.trim()].filter(Boolean).join('\n');
+		return [
+			`## Subagent: ${match.name}`,
+			match.description.trim(),
+			match.memoryScope ? `Memory scope: ${match.memoryScope}` : '',
+			'',
+			match.instructions.trim(),
+		]
+			.filter(Boolean)
+			.join('\n');
 	}
 
 	return [`## Subagent type: ${t}`, 'Complete the task using the tools available to you.'].join('\n');

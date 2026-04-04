@@ -35,6 +35,7 @@ describe('buildSubagentSystemAppend', () => {
 					name: 'Worker',
 					description: 'Does work',
 					instructions: 'Be concise.',
+					memoryScope: 'project',
 					enabled: true,
 				},
 			],
@@ -42,6 +43,7 @@ describe('buildSubagentSystemAppend', () => {
 		const b = buildSubagentSystemAppend(s, 'my-worker');
 		expect(b).toContain('## Subagent: Worker');
 		expect(b).toContain('Be concise.');
+		expect(b).toContain('Memory scope: project');
 	});
 
 	it('returns generic block for unknown named type', () => {
