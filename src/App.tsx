@@ -210,6 +210,11 @@ function debugDiffHead(diff: string, max = 160): string {
 	return diff.replace(/\s+/g, ' ').slice(0, max);
 }
 
+function diffCreatesNewFile(diff: string | null | undefined): boolean {
+	const text = String(diff ?? '');
+	return /^new file mode\s/m.test(text) || /^---\s+\/dev\/null$/m.test(text);
+}
+
 function extractPlanMarkdownPreview(text: string): string {
 	if (!text.trim()) {
 		return '';
@@ -808,6 +813,26 @@ function IconArrowUpRight({ className }: { className?: string }) {
 		<svg className={className} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
 			<path d="M7 17L17 7" strokeLinecap="round" />
 			<path d="M8 7h9v9" strokeLinecap="round" strokeLinejoin="round" />
+		</svg>
+	);
+}
+
+function IconEye({ className }: { className?: string }) {
+	return (
+		<svg
+			className={className}
+			width="15"
+			height="15"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.9"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			aria-hidden
+		>
+			<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+			<circle cx="12" cy="12" r="3" />
 		</svg>
 	);
 }
@@ -4724,6 +4749,14 @@ export default function App() {
 			if (!shell || !currentId || !agentFilePreview || !patch.trim()) {
 				return;
 			}
+			if (diffCreatesNewFile(agentFilePreview.diff)) {
+				const ok = window.confirm(
+					t('app.filePreviewRevertNewFileConfirm', { path: agentFilePreview.relPath })
+				);
+				if (!ok) {
+					return;
+				}
+			}
 			setAgentFilePreviewBusyPatch(patch);
 			try {
 				const result = (await shell.invoke('agent:revertFileHunk', {
@@ -4764,12 +4797,25 @@ export default function App() {
 			openAgentSidebarFilePreview,
 			refreshGit,
 			shell,
+			t,
 		]
 	);
 
-	const onExplorerOpenFile = async (rel: string, revealLine?: number, revealEndLine?: number) => {
-		await openFileInTab(rel, revealLine, revealEndLine);
-	};
+	const onExplorerOpenFile = useCallback(
+		async (
+			rel: string,
+			revealLine?: number,
+			revealEndLine?: number,
+			options?: AgentConversationFileOpenOptions
+		) => {
+			if (layoutMode === 'agent') {
+				await openAgentSidebarFilePreview(rel, revealLine, revealEndLine, options);
+				return;
+			}
+			await openFileInTab(rel, revealLine, revealEndLine);
+		},
+		[layoutMode, openAgentSidebarFilePreview, openFileInTab]
+	);
 
 	const goToLineInEditor = useCallback((line: number) => {
 		const ed = monacoEditorRef.current;
@@ -7411,6 +7457,8 @@ export default function App() {
 	const isEditorHomeMode = !workspace;
 	const agentFilePreviewTitle =
 		agentFilePreview?.relPath?.split('/').pop() || agentFilePreview?.relPath || t('app.filePreview');
+	const gitCardOpenAria = layoutMode === 'agent' ? t('app.gitPreviewAria') : t('app.gitOpenInEditorAria');
+	const gitCardOpenTitle = layoutMode === 'agent' ? t('app.gitPreviewTitle') : t('app.gitOpenTitle');
 	const agentRightSidebarTitle =
 		agentRightSidebarView === 'git'
 			? changeCount > 0
@@ -9343,11 +9391,16 @@ export default function App() {
 																	<button
 																		type="button"
 																		className="ref-git-card-open"
-																		aria-label={t('app.gitOpenInEditorAria')}
-																		title={t('app.gitOpenTitle')}
-																		onClick={() => void onExplorerOpenFile(rel)}
+																		aria-label={gitCardOpenAria}
+																		title={gitCardOpenTitle}
+																		onClick={() =>
+																			void onExplorerOpenFile(rel, undefined, undefined, {
+																				diff: pr?.diff ?? null,
+																				allowReviewActions: true,
+																			})
+																		}
 																	>
-																		→
+																		<IconEye />
 																	</button>
 																</div>
 																<div className="ref-git-card-body">

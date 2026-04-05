@@ -8795,6 +8795,9 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 }
 
 .ref-git-card-open {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	border: none;
 	background: transparent;
 	color: var(--void-fg-3);
@@ -8803,6 +8806,10 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	line-height: 1;
 	padding: 4px 8px;
 	border-radius: 6px;
+}
+
+.ref-git-card-open svg {
+	display: block;
 }
 
 .ref-git-card-open:hover {

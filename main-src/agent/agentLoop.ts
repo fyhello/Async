@@ -24,6 +24,7 @@ import type { TurnTokenUsage } from '../llm/types.js';
 import { composeSystem, temperatureForMode } from '../llm/modePrompts.js';
 import {
 	anthropicEffectiveMaxTokens,
+	anthropicEffectiveTemperature,
 	anthropicThinkingBudget,
 	openAIReasoningEffort,
 } from '../llm/thinkingLevel.js';
@@ -799,8 +800,6 @@ async function runAnthropicLoop(
 	);
 	const model = options.requestModelId.trim();
 	if (!model) { handlers.onError('模型请求名称为空。'); return; }
-	const temperature = temperatureForMode(options.composerMode);
-
 	let conversation: MessageParam[] = normalizeAnthropicMessagesForApi(threadToAnthropic(threadMessages));
 	conversation = repairAnthropicToolPairing(conversation);
 	conversation = mergeAdjacentAnthropicUserMessages(conversation);
@@ -811,6 +810,7 @@ async function runAnthropicLoop(
 	);
 	const structured = new StructuredAssistantBuilder();
 	const thinkBudget = anthropicThinkingBudget(options.thinkingLevel ?? 'off');
+	const temperature = anthropicEffectiveTemperature(temperatureForMode(options.composerMode), thinkBudget);
 	let accUsage: TurnTokenUsage | undefined;
 
 	const mistakeLimitEnabled = options.mistakeLimitEnabled !== false;

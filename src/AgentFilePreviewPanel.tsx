@@ -229,7 +229,7 @@ export function AgentFilePreviewPanel({
 						className="ref-agent-file-preview-open-btn"
 						onClick={onOpenInEditor}
 					>
-						{t('app.gitOpenTitle')}
+						{t('app.gitOpenInEditorAria')}
 					</button>
 				) : null}
 			</div>

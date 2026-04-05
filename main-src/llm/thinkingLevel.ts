@@ -51,6 +51,14 @@ export function anthropicEffectiveMaxTokens(thinkBudget: number | null, userCap:
 	return maxTokens;
 }
 
+/**
+ * Anthropic extended thinking 开启时，API 仅接受 `temperature: 1`。
+ * 普通模式继续沿用现有温度策略。
+ */
+export function anthropicEffectiveTemperature(defaultTemperature: number, thinkBudget: number | null): number {
+	return thinkBudget !== null ? 1 : defaultTemperature;
+}
+
 /** OpenAI Chat Completions reasoning_effort（非推理模型会忽略或报错由网关决定） */
 export function openAIReasoningEffort(level: ThinkingLevel): 'low' | 'medium' | 'high' | undefined {
 	switch (level) {

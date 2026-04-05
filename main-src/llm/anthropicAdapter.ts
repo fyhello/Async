@@ -4,7 +4,11 @@ import type { ChatMessage } from '../threadStore.js';
 import type { ShellSettings } from '../settingsStore.js';
 import { composeSystem, temperatureForMode } from './modePrompts.js';
 import type { StreamHandlers, TurnTokenUsage, UnifiedChatOptions } from './types.js';
-import { anthropicEffectiveMaxTokens, anthropicThinkingBudget } from './thinkingLevel.js';
+import {
+	anthropicEffectiveMaxTokens,
+	anthropicEffectiveTemperature,
+	anthropicThinkingBudget,
+} from './thinkingLevel.js';
 import { resolveStreamTimeouts, createStreamTimeoutManager } from './streamTimeouts.js';
 
 function toAnthropicMessages(messages: ChatMessage[]): MessageParam[] {
@@ -56,8 +60,8 @@ export async function streamAnthropic(
 		handlers.onError('模型请求名称为空。请在 Models 中编辑该模型的「请求名称」。');
 		return;
 	}
-	const temperature = temperatureForMode(options.mode);
 	const thinkBudget = anthropicThinkingBudget(options.thinkingLevel ?? 'off');
+	const temperature = anthropicEffectiveTemperature(temperatureForMode(options.mode), thinkBudget);
 	const maxTokens = anthropicEffectiveMaxTokens(thinkBudget, options.maxOutputTokens);
 	const thinkingParam =
 		thinkBudget !== null

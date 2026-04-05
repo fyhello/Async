@@ -221,6 +221,7 @@ export const messagesEn: Record<string, string> = {
 	'app.filePreviewChangeLabel': 'AI change',
 	'app.filePreviewAcceptChange': 'Keep',
 	'app.filePreviewRevertChange': 'Undo',
+	'app.filePreviewRevertNewFileConfirm': 'Undoing this new file change will delete “{{path}}”. Continue?',
 	'app.noFileSelected': 'No file selected',
 	'app.editorEmptyTitle': 'Open a file to start editing',
 	'app.editorEmptyDescription':
@@ -244,6 +245,8 @@ export const messagesEn: Record<string, string> = {
 	'app.gitLoadFailed': 'Failed to load changes',
 	'app.gitOpenInEditorAria': 'Open in editor',
 	'app.gitOpenTitle': 'Open',
+	'app.gitPreviewAria': 'Preview file in Agent sidebar',
+	'app.gitPreviewTitle': 'Preview',
 	'app.gitDiffLoading': 'Loading diff…',
 	'app.gitBinary': 'Binary file; diff not shown.',
 	'app.gitNoPreview': 'No preview available',
