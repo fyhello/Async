@@ -166,6 +166,19 @@ import {
 	type GitUnavailableReason,
 } from './gitAvailability';
 import { deriveOriginalContentFromUnifiedDiff } from './editorInlineDiff';
+import { useGitIntegration } from './hooks/useGitIntegration';
+import { useWorkspaceManager } from './hooks/useWorkspaceManager';
+import { useThreads } from './hooks/useThreads';
+import { type ThreadInfo, type ChatMessage, normalizeThreadRow } from './threadTypes';
+import { useAgentFileReview, type AgentFilePreviewState } from './hooks/useAgentFileReview';
+import { useComposer } from './hooks/useComposer';
+import {
+	useEditorTabs,
+	type EditorInlineDiffState,
+	type EditorPtySession,
+	clampEditorTerminalHeight,
+	EDITOR_TERMINAL_HEIGHT_KEY,
+} from './hooks/useEditorTabs';
 
 const SettingsPage = lazy(() => import('./SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
@@ -194,25 +207,6 @@ import {
 } from './i18n';
 import './monacoSetup';
 
-type ThreadInfo = {
-	id: string;
-	title: string;
-	updatedAt: number;
-	createdAt?: number;
-	previewCount: number;
-	hasUserMessages?: boolean;
-	isToday?: boolean;
-	isAwaitingReply?: boolean;
-	hasAgentDiff?: boolean;
-	additions?: number;
-	deletions?: number;
-	filePaths?: string[];
-	fileCount?: number;
-	subtitleFallback?: string;
-	tokenUsage?: { totalInput: number; totalOutput: number };
-	fileStateCount?: number;
-};
-type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 function debugDiffHead(diff: string, max = 160): string {
 	return diff.replace(/\s+/g, ' ').slice(0, max);
@@ -259,65 +253,11 @@ function stripMarkdownSection(markdown: string, headingPattern: string): string 
 	const regex = new RegExp(`^##\\s+(?:${headingPattern})\\s*$[\\s\\S]*?(?=^##\\s+|\\s*$)`, 'm');
 	return markdown.replace(regex, '').replace(/\n{3,}/g, '\n\n').trim();
 }
-type EditorPtySession = { id: string; title: string };
 type DiffPreview = { diff: string; isBinary: boolean; additions: number; deletions: number };
 type AgentConversationFileOpenOptions = { diff?: string | null; allowReviewActions?: boolean };
-type AgentFilePreviewState = {
-	relPath: string;
-	revealLine?: number;
-	revealEndLine?: number;
-	loading: boolean;
-	content: string;
-	diff: string;
-	isBinary: boolean;
-	readError: string | null;
-	additions: number;
-	deletions: number;
-	reviewMode: 'snapshot' | 'readonly';
-};
-
-type EditorInlineDiffState = {
-	filePath: string;
-	originalContent: string;
-	diff: string;
-	revealLine?: number;
-	revealEndLine?: number;
-	reviewMode: 'snapshot' | 'readonly';
-};
 
 const SIDEBAR_LAYOUT_KEY = 'async:sidebar-widths-v1';
 const SHELL_LAYOUT_MODE_KEY = 'async:shell-layout-mode-v1';
-const COMPOSER_MODE_KEY = 'async:composer-mode-v1';
-const EDITOR_TERMINAL_HEIGHT_KEY = 'async:editor-terminal-height-v1';
-const AGENT_WORKSPACE_ALIASES_KEY = 'async:agent-workspace-aliases-v1';
-const AGENT_WORKSPACE_HIDDEN_KEY = 'async:agent-workspace-hidden-v1';
-const AGENT_WORKSPACE_COLLAPSED_KEY = 'async:agent-workspace-collapsed-v1';
-const EDITOR_TERMINAL_H_MIN = 120;
-const EDITOR_TERMINAL_H_MAX_RATIO = 0.65;
-
-function readJsonStorage<T>(key: string, fallback: T): T {
-	try {
-		if (typeof window === 'undefined') {
-			return fallback;
-		}
-		const raw = localStorage.getItem(key);
-		if (!raw) {
-			return fallback;
-		}
-		return JSON.parse(raw) as T;
-	} catch {
-		return fallback;
-	}
-}
-
-function writeJsonStorage(key: string, value: unknown) {
-	try {
-		localStorage.setItem(key, JSON.stringify(value));
-	} catch {
-		/* ignore */
-	}
-}
-
 function sameStringArray(a: string[], b: string[]): boolean {
 	if (a.length !== b.length) {
 		return false;
@@ -330,57 +270,7 @@ function sameStringArray(a: string[], b: string[]): boolean {
 	return true;
 }
 
-function clampEditorTerminalHeight(h: number): number {
-	if (typeof window === 'undefined') {
-		return Math.max(EDITOR_TERMINAL_H_MIN, Math.round(h));
-	}
-	const max = Math.max(
-		EDITOR_TERMINAL_H_MIN + 40,
-		Math.floor(window.innerHeight * EDITOR_TERMINAL_H_MAX_RATIO)
-	);
-	return Math.min(max, Math.max(EDITOR_TERMINAL_H_MIN, Math.round(h)));
-}
 
-function readEditorTerminalHeightPx(): number {
-	try {
-		if (typeof window === 'undefined') {
-			return 260;
-		}
-		const v = localStorage.getItem(EDITOR_TERMINAL_HEIGHT_KEY);
-		if (v) {
-			const n = parseInt(v, 10);
-			if (Number.isFinite(n)) {
-				return clampEditorTerminalHeight(n);
-			}
-		}
-	} catch {
-		/* ignore */
-	}
-	return clampEditorTerminalHeight(Math.round(Math.min(window.innerHeight * 0.3, 280)));
-}
-
-function readComposerMode(): ComposerMode {
-	try {
-		if (typeof window === 'undefined') {
-			return 'agent';
-		}
-		const v = localStorage.getItem(COMPOSER_MODE_KEY);
-		if (v === 'agent' || v === 'plan' || v === 'debug' || v === 'ask') {
-			return v;
-		}
-	} catch {
-		/* ignore */
-	}
-	return 'agent';
-}
-
-function writeComposerMode(m: ComposerMode) {
-	try {
-		localStorage.setItem(COMPOSER_MODE_KEY, m);
-	} catch {
-		/* ignore */
-	}
-}
 const RESIZE_HANDLE_PX = 5;
 const LEFT_RAIL_MIN = 200;
 const LEFT_RAIL_MAX = 960;
@@ -897,22 +787,6 @@ function IconImageOutline({ className }: { className?: string }) {
 	);
 }
 
-function normalizeThreadRow(t: ThreadInfo): ThreadInfo {
-	return {
-		...t,
-		hasUserMessages: t.hasUserMessages ?? false,
-		isToday: typeof t.isToday === 'boolean' ? t.isToday : true,
-		isAwaitingReply: t.isAwaitingReply ?? false,
-		hasAgentDiff: t.hasAgentDiff ?? false,
-		additions: t.additions ?? 0,
-		deletions: t.deletions ?? 0,
-		filePaths: t.filePaths ?? [],
-		fileCount: t.fileCount ?? 0,
-		subtitleFallback: t.subtitleFallback ?? '',
-		tokenUsage: t.tokenUsage,
-		fileStateCount: t.fileStateCount ?? 0,
-	};
-}
 
 function threadFileBasename(rel: string): string {
 	const n = rel.replace(/\\/g, '/');
@@ -1043,66 +917,116 @@ export default function App() {
 
 	const { t, setLocale, locale } = useI18n();
 	const [ipcOk, setIpcOk] = useState<string>('…');
-	const [workspace, setWorkspace] = useState<string | null>(null);
-	const [workspaceFileList, setWorkspaceFileList] = useState<string[]>([]);
-	const [threads, setThreads] = useState<ThreadInfo[]>([]);
-	const [threadSearch, setThreadSearch] = useState('');
-	const [currentId, setCurrentId] = useState<string | null>(null);
-	const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
-	const [editingThreadTitleDraft, setEditingThreadTitleDraft] = useState('');
-	const threadTitleDraftRef = useRef('');
-	const threadTitleInputRef = useRef<HTMLInputElement>(null);
-	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-	const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [messages, setMessages] = useState<ChatMessage[]>([]);
-	const messagesRef = useRef(messages);
-	messagesRef.current = messages;
-	/** `messages` 最近一次由 `threads:messages` 写入时对应的线程；与 `currentId` 不一致时不做文件条 persist 的读/清，避免切线程空窗期误删 localStorage */
-	const [messagesThreadId, setMessagesThreadId] = useState<string | null>(null);
-	const currentIdRef = useRef(currentId);
+
+	// indexingSettings 前置声明，供 useWorkspaceManager 的 tsLspEnabled 使用
+	// 初始值为默认值，init effect 加载完 settings:get 后会 setIndexingSettings 更新
+	const [indexingSettings, setIndexingSettings] = useState<IndexingSettingsState>(() => normalizeIndexingSettings());
+
+	// ── 提取的 hooks（必须在所有依赖其返回值的代码之前调用）──────────────────
+	const {
+		workspace,
+		setWorkspace,
+		workspaceFileList,
+		homeRecents,
+		setHomeRecents,
+		folderRecents,
+		setFolderRecents,
+		workspaceAliases,
+		setWorkspaceAliases,
+		hiddenAgentWorkspacePaths,
+		setHiddenAgentWorkspacePaths,
+		collapsedAgentWorkspacePaths,
+		setCollapsedAgentWorkspacePaths,
+		tsLspStatus,
+		setTsLspStatus,
+	} = useWorkspaceManager(shell, indexingSettings.tsLspEnabled);
+
+	const {
+		gitBranch,
+		gitLines,
+		gitPathStatus,
+		gitChangedPaths,
+		gitStatusOk,
+		gitBranchList,
+		gitBranchListCurrent,
+		diffPreviews,
+		diffLoading,
+		gitActionError,
+		setGitActionError,
+		treeEpoch,
+		gitBranchPickerOpen,
+		setGitBranchPickerOpen,
+		gitPathsKey,
+		diffTotals,
+		refreshGit,
+		onGitBranchListFresh,
+	} = useGitIntegration(shell, workspace);
+
+	const {
+		threads,
+		setThreads,
+		threadSearch,
+		setThreadSearch,
+		currentId,
+		setCurrentId,
+		currentIdRef,
+		editingThreadId,
+		setEditingThreadId,
+		editingThreadTitleDraft,
+		setEditingThreadTitleDraft,
+		threadTitleDraftRef,
+		threadTitleInputRef,
+		confirmDeleteId,
+		setConfirmDeleteId,
+		confirmDeleteTimerRef,
+		messages,
+		setMessages,
+		messagesRef,
+		messagesThreadId,
+		setMessagesThreadId,
+		resendFromUserIndex,
+		setResendFromUserIndex,
+		resendIdxRef,
+		threadNavigation,
+		setThreadNavigation,
+		skipThreadNavigationRecordRef,
+		refreshThreads,
+		loadMessages,
+		resetThreadState,
+	} = useThreads(shell);
+	// ─────────────────────────────────────────────────────────────────────────
+
 	/** Plan Build 成功后写入 threads.json；在 stream done 时与 pending 对齐 */
 	const planBuildPendingMarkerRef = useRef<{ threadId: string; pathKey: string } | null>(null);
-	currentIdRef.current = currentId;
-	/** 点击某条用户消息后，从该条起截断并重发（与 threads:messages 顺序一致） */
-	const [resendFromUserIndex, setResendFromUserIndex] = useState<number | null>(null);
-	const [composerSegments, setComposerSegments] = useState<ComposerSegment[]>([]);
-	/** 内联编辑已发送消息时专用，与底部输入框互不共享 */
-	const [inlineResendSegments, setInlineResendSegments] = useState<ComposerSegment[]>([]);
-	const resendIdxRef = useRef<number | null>(null);
-	resendIdxRef.current = resendFromUserIndex;
 	const [streaming, setStreaming] = useState('');
 	const [awaitingReply, setAwaitingReply] = useState(false);
 	const [thinkingTick, setThinkingTick] = useState(0);
 	const [thoughtSecondsByThread, setThoughtSecondsByThread] = useState<Record<string, number>>({});
-	const [gitBranch, setGitBranch] = useState('—');
-	const [gitLines, setGitLines] = useState<string[]>([]);
-	const [gitPathStatus, setGitPathStatus] = useState<GitPathStatusMap>({});
-	const [gitChangedPaths, setGitChangedPaths] = useState<string[]>([]);
-	/** `git:status` 成功（有仓库且本机可执行 git）；否则 Agent 改动条回退为对话解析统计 */
-	const [gitStatusOk, setGitStatusOk] = useState(false);
-	/** 与 refreshGit 同步预取的本地分支列表（供分支选择器立即展示） */
-	const [gitBranchList, setGitBranchList] = useState<string[]>([]);
-	const [gitBranchListCurrent, setGitBranchListCurrent] = useState('');
-	const [diffPreviews, setDiffPreviews] = useState<Record<string, DiffPreview>>({});
-	const [diffLoading, setDiffLoading] = useState(false);
-	const [gitActionError, setGitActionError] = useState<string | null>(null);
-	/** 各线程待审阅的 Agent diff（确认后才写入工作区） */
-	const [agentReviewPendingByThread, setAgentReviewPendingByThread] = useState<
-		Record<string, AgentPendingPatch[]>
-	>({});
-	const [agentReviewBusy, setAgentReviewBusy] = useState(false);
-	const [fileChangesDismissed, setFileChangesDismissed] = useState(false);
-	const [dismissedFiles, setDismissedFiles] = useState<Set<string>>(new Set());
-	const [revertedFiles, setRevertedFiles] = useState<Set<string>>(new Set());
-	const [revertedChangeKeys, setRevertedChangeKeys] = useState<Set<string>>(new Set());
-	const fileChangesDismissedRef = useRef(fileChangesDismissed);
-	fileChangesDismissedRef.current = fileChangesDismissed;
-	const dismissedFilesRef = useRef(dismissedFiles);
-	dismissedFilesRef.current = dismissedFiles;
-	const revertedFilesRef = useRef(revertedFiles);
-	revertedFilesRef.current = revertedFiles;
-	const revertedChangeKeysRef = useRef(revertedChangeKeys);
-	revertedChangeKeysRef.current = revertedChangeKeys;
+	const {
+		agentReviewPendingByThread,
+		setAgentReviewPendingByThread,
+		agentReviewBusy,
+		setAgentReviewBusy,
+		fileChangesDismissed,
+		setFileChangesDismissed,
+		fileChangesDismissedRef,
+		dismissedFiles,
+		setDismissedFiles,
+		dismissedFilesRef,
+		revertedFiles,
+		setRevertedFiles,
+		revertedFilesRef,
+		revertedChangeKeys,
+		setRevertedChangeKeys,
+		revertedChangeKeysRef,
+		agentFilePreview,
+		setAgentFilePreview,
+		agentFilePreviewBusyPatch,
+		setAgentFilePreviewBusyPatch,
+		agentFilePreviewRequestRef,
+		clearAgentReviewForThread,
+		resetAgentReviewState,
+	} = useAgentFileReview();
 	/** Plan 模式 — 结构化问题弹窗 */
 	const [planQuestion, setPlanQuestion] = useState<PlanQuestion | null>(null);
 	/** 若来自 ask_plan_question 工具，需在 IPC 中回传主进程以解除 execute 阻塞 */
@@ -1125,10 +1049,6 @@ export default function App() {
 	const [executedPlanKeys, setExecutedPlanKeys] = useState<string[]>([]);
 	const [agentRightSidebarOpen, setAgentRightSidebarOpen] = useState(false);
 	const [agentRightSidebarView, setAgentRightSidebarView] = useState<AgentRightSidebarView>('git');
-	const [agentFilePreview, setAgentFilePreview] = useState<AgentFilePreviewState | null>(null);
-	const [agentFilePreviewBusyPatch, setAgentFilePreviewBusyPatch] = useState<string | null>(null);
-	const agentFilePreviewRequestRef = useRef(0);
-	const [treeEpoch, setTreeEpoch] = useState(0);
 	const [commitMsg, setCommitMsg] = useState('');
 	const [lastTurnUsage, setLastTurnUsage] = useState<TurnTokenUsage | null>(null);
 	const [settingsPageOpen, setSettingsPageOpen] = useState(false);
@@ -1138,13 +1058,38 @@ export default function App() {
 	const [layoutSwitchTarget, setLayoutSwitchTarget] = useState<LayoutMode | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-	const [gitBranchPickerOpen, setGitBranchPickerOpen] = useState(false);
 	useEffect(() => {
 		if (plusMenuOpen || modelPickerOpen) {
 			setGitBranchPickerOpen(false);
 		}
-	}, [plusMenuOpen, modelPickerOpen]);
-	const [composerMode, setComposerMode] = useState<ComposerMode>(() => readComposerMode());
+	}, [plusMenuOpen, modelPickerOpen, setGitBranchPickerOpen]);
+	const {
+		composerSegments,
+		setComposerSegments,
+		inlineResendSegments,
+		setInlineResendSegments,
+		composerMode,
+		setComposerMode,
+		composerAttachErr,
+		setComposerAttachErr,
+		composerAttachErrTimerRef,
+		streamingThinking,
+		setStreamingThinking,
+		streamingToolPreview,
+		setStreamingToolPreview,
+		streamingToolPreviewClearTimerRef,
+		liveAssistantBlocks,
+		setLiveAssistantBlocks,
+		toolApprovalRequest,
+		setToolApprovalRequest,
+		mistakeLimitRequest,
+		setMistakeLimitRequest,
+		clearStreamingToolPreviewNow,
+		resetLiveAgentBlocks,
+		flashComposerAttachErr,
+		resetComposerState,
+	} = useComposer();
+
 	const [modelProviders, setModelProviders] = useState<UserLlmProvider[]>([]);
 	const [defaultModel, setDefaultModel] = useState('');
 	const [agentPlanBuildModelId, setAgentPlanBuildModelId] = useState('');
@@ -1153,31 +1098,7 @@ export default function App() {
 	const [editorPlanBuildModelId, setEditorPlanBuildModelId] = useState('');
 	const [editorPlanReviewDismissed, setEditorPlanReviewDismissed] = useState(false);
 	const [thinkingByModelId, setThinkingByModelId] = useState<Record<string, ThinkingLevel>>({});
-	const [streamingThinking, setStreamingThinking] = useState('');
-	const [streamingToolPreview, setStreamingToolPreview] = useState<{
-		name: string;
-		partialJson: string;
-		index: number;
-	} | null>(null);
-	const streamingToolPreviewClearTimerRef = useRef<number | null>(null);
 	const planTodoDraftInputRef = useRef<HTMLInputElement | null>(null);
-	const [liveAssistantBlocks, setLiveAssistantBlocks] = useState<LiveAgentBlocksState>(() =>
-		createEmptyLiveAgentBlocks()
-	);
-	const resetLiveAgentBlocks = useCallback(() => {
-		setLiveAssistantBlocks(createEmptyLiveAgentBlocks());
-	}, []);
-	const [toolApprovalRequest, setToolApprovalRequest] = useState<{
-		approvalId: string;
-		toolName: string;
-		command?: string;
-		path?: string;
-	} | null>(null);
-	const [mistakeLimitRequest, setMistakeLimitRequest] = useState<{
-		recoveryId: string;
-		consecutiveFailures: number;
-		threshold: number;
-	} | null>(null);
 	const [modelEntries, setModelEntries] = useState<UserModelEntry[]>([]);
 	const [enabledModelIds, setEnabledModelIds] = useState<string[]>([]);
 	const [agentCustomization, setAgentCustomization] = useState<AgentCustomization>(() => defaultAgentCustomization());
@@ -1278,7 +1199,6 @@ export default function App() {
 	}, [shell, workspace, diskSkillsRefreshTicker]);
 
 	const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => defaultEditorSettings());
-	const [indexingSettings, setIndexingSettings] = useState<IndexingSettingsState>(() => normalizeIndexingSettings());
 	const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
 	const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
 	const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => readStoredShellLayoutMode());
@@ -1299,24 +1219,7 @@ export default function App() {
 		setEditorExplorerCollapsed((prev) => !prev);
 		window.requestAnimationFrame(scrollEditorExplorerToTop);
 	}, [scrollEditorExplorerToTop]);
-	const [homeRecents, setHomeRecents] = useState<string[]>([]);
-	/** 文件菜单「打开最近的文件夹」：与是否打开工作区无关 */
-	const [folderRecents, setFolderRecents] = useState<string[]>([]);
 	const [agentWorkspaceOrder, setAgentWorkspaceOrder] = useState<string[]>([]);
-	const [workspaceAliases, setWorkspaceAliases] = useState<Record<string, string>>(() =>
-		readJsonStorage<Record<string, string>>(AGENT_WORKSPACE_ALIASES_KEY, {})
-	);
-	const [hiddenAgentWorkspacePaths, setHiddenAgentWorkspacePaths] = useState<string[]>(() =>
-		readJsonStorage<string[]>(AGENT_WORKSPACE_HIDDEN_KEY, [])
-	);
-	const [collapsedAgentWorkspacePaths, setCollapsedAgentWorkspacePaths] = useState<string[]>(() =>
-		readJsonStorage<string[]>(AGENT_WORKSPACE_COLLAPSED_KEY, [])
-	);
-	const [threadNavigation, setThreadNavigation] = useState<{ history: string[]; index: number }>({
-		history: [],
-		index: -1,
-	});
-	const skipThreadNavigationRecordRef = useRef(false);
 	const [uiZoom, setUiZoom] = useState(1);
 	const [workspaceMenuPath, setWorkspaceMenuPath] = useState<string | null>(null);
 	const [workspaceMenuPosition, setWorkspaceMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -1326,31 +1229,41 @@ export default function App() {
 	const [editingWorkspaceNameDraft, setEditingWorkspaceNameDraft] = useState('');
 	const workspaceNameDraftRef = useRef('');
 	const workspaceNameInputRef = useRef<HTMLInputElement | null>(null);
-	const [openTabs, setOpenTabs] = useState<EditorTab[]>([]);
-	const [activeTabId, setActiveTabId] = useState<string | null>(null);
-	const [filePath, setFilePath] = useState('');
-	const [editorValue, setEditorValue] = useState('');
-	const [editorInlineDiffByPath, setEditorInlineDiffByPath] = useState<Record<string, EditorInlineDiffState>>({});
-	const [saveToastKey, setSaveToastKey] = useState(0);
-	const [saveToastVisible, setSaveToastVisible] = useState(false);
+	const {
+		openTabs,
+		setOpenTabs,
+		activeTabId,
+		setActiveTabId,
+		filePath,
+		setFilePath,
+		editorValue,
+		setEditorValue,
+		editorInlineDiffByPath,
+		setEditorInlineDiffByPath,
+		saveToastKey,
+		setSaveToastKey,
+		saveToastVisible,
+		setSaveToastVisible,
+		editorTerminalVisible,
+		setEditorTerminalVisible,
+		editorTerminalHeightPx,
+		setEditorTerminalHeightPx,
+		editorTerminalSessions,
+		setEditorTerminalSessions,
+		activeEditorTerminalId,
+		setActiveEditorTerminalId,
+		monacoEditorRef,
+		editorLoadRequestRef,
+		pendingEditorHighlightRangeRef,
+	} = useEditorTabs();
+
 	const [subAgentBgToast, setSubAgentBgToast] = useState<{ key: number; ok: boolean; text: string } | null>(null);
 	const subAgentBgToastTimerRef = useRef<number | null>(null);
-	const [composerAttachErr, setComposerAttachErr] = useState<string | null>(null);
-	const composerAttachErrTimerRef = useRef<number | null>(null);
-	const monacoEditorRef = useRef<MonacoEditorNS.IStandaloneCodeEditor | null>(null);
-	const editorLoadRequestRef = useRef(0);
-	const [tsLspStatus, setTsLspStatus] = useState<'off' | 'starting' | 'ready' | 'error'>('off');
-	/** 打开文件后在 Monaco 中高亮的行范围（1-based，含 end） */
-	const pendingEditorHighlightRangeRef = useRef<{ start: number; end: number } | null>(null);
 	const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
 	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
 	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
 	const [quickOpenSeed, setQuickOpenSeed] = useState('');
 	const [, setSidebarSearchDraft] = useState('');
-	const [editorTerminalVisible, setEditorTerminalVisible] = useState(true);
-	const [editorTerminalHeightPx, setEditorTerminalHeightPx] = useState(() => readEditorTerminalHeightPx());
-	const [editorTerminalSessions, setEditorTerminalSessions] = useState<EditorPtySession[]>([]);
-	const [activeEditorTerminalId, setActiveEditorTerminalId] = useState<string | null>(null);
 	const editorTerminalCreateLockRef = useRef(false);
 	const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
 	const terminalMenuRef = useRef<HTMLDivElement>(null);
@@ -1406,50 +1319,27 @@ export default function App() {
 	const [plusMenuAnchorSlot, setPlusMenuAnchorSlot] = useState<ComposerAnchorSlot>('bottom');
 	const [modelPickerAnchorSlot, setModelPickerAnchorSlot] = useState<ComposerAnchorSlot>('bottom');
 
-	const clearStreamingToolPreviewNow = useCallback(() => {
-		if (streamingToolPreviewClearTimerRef.current !== null) {
-			window.clearTimeout(streamingToolPreviewClearTimerRef.current);
-			streamingToolPreviewClearTimerRef.current = null;
-		}
-		setStreamingToolPreview(null);
-	}, []);
 
 	const clearWorkspaceConversationState = useCallback(() => {
 		streamThreadRef.current = null;
 		streamStartedAtRef.current = null;
 		firstTokenAtRef.current = null;
-		currentIdRef.current = null;
 		planBuildPendingMarkerRef.current = null;
-		setThreads([]);
-		setCurrentId(null);
-		setMessages([]);
-		setMessagesThreadId(null);
+		resetThreadState();
+		resetAgentReviewState();
+		resetComposerState();
 		setLastTurnUsage(null);
 		setAwaitingReply(false);
 		setStreaming('');
-		setStreamingThinking('');
-		clearStreamingToolPreviewNow();
-		resetLiveAgentBlocks();
 		setParsedPlan(null);
 		setPlanFilePath(null);
 		setPlanFileRelPath(null);
 		setExecutedPlanKeys([]);
 		setPlanQuestion(null);
 		setPlanQuestionRequestId(null);
-		setComposerSegments([]);
-		setInlineResendSegments([]);
-		setResendFromUserIndex(null);
-		setConfirmDeleteId(null);
-		setEditingThreadId(null);
-		setEditingThreadTitleDraft('');
 		setEditingWorkspacePath(null);
 		setEditingWorkspaceNameDraft('');
-		setToolApprovalRequest(null);
-		setMistakeLimitRequest(null);
-		setFileChangesDismissed(false);
-		setDismissedFiles(new Set());
-		setThreadNavigation({ history: [], index: -1 });
-	}, [clearStreamingToolPreviewNow, resetLiveAgentBlocks]);
+	}, [resetThreadState, resetAgentReviewState, resetComposerState]);
 
 	const respondToolApproval = useCallback(
 		async (approved: boolean) => {
@@ -1501,10 +1391,8 @@ export default function App() {
 		};
 	}, []);
 
-	const setComposerModePersist = useCallback((m: ComposerMode) => {
-		setComposerMode(m);
-		writeComposerMode(m);
-	}, []);
+	// writeComposerMode 已由 useComposer 内的 useEffect 自动处理，直接使用 setComposerMode
+	const setComposerModePersist = setComposerMode;
 
 	const openSettingsPage = (nav: SettingsNavId) => {
 		setModelPickerOpen(false);
@@ -1635,7 +1523,6 @@ export default function App() {
 	const gitUnavailableReason: GitUnavailableReason = gitStatusOk
 		? 'none'
 		: classifyGitUnavailableReason(gitLines[0]);
-	const gitPathsKey = useMemo(() => gitChangedPaths.join('\n'), [gitChangedPaths]);
 	const normalizedEditorSidebarSearchQuery = editorSidebarSearchQuery.trim().toLowerCase();
 	const editorSidebarSearchResults = useMemo(() => {
 		if (!normalizedEditorSidebarSearchQuery) {
@@ -1714,49 +1601,6 @@ export default function App() {
 	const canEditPaste = monacoTextFocused || !!activeDomEditable;
 	const canEditSelectAll = monacoTextFocused || !!activeDomEditable || pageSelectionText.length > 0;
 
-	const diffTotals = useMemo(() => {
-		let additions = 0;
-		let deletions = 0;
-		for (const p of gitChangedPaths) {
-			const pr = diffPreviews[p];
-			if (pr) {
-				additions += pr.additions;
-				deletions += pr.deletions;
-			}
-		}
-		return { additions, deletions };
-	}, [gitChangedPaths, diffPreviews]);
-
-	useEffect(() => {
-		writeJsonStorage(AGENT_WORKSPACE_ALIASES_KEY, workspaceAliases);
-	}, [workspaceAliases]);
-
-	useEffect(() => {
-		writeJsonStorage(AGENT_WORKSPACE_HIDDEN_KEY, hiddenAgentWorkspacePaths);
-	}, [hiddenAgentWorkspacePaths]);
-
-	useEffect(() => {
-		writeJsonStorage(AGENT_WORKSPACE_COLLAPSED_KEY, collapsedAgentWorkspacePaths);
-	}, [collapsedAgentWorkspacePaths]);
-
-	useEffect(() => {
-		if (!currentId) {
-			return;
-		}
-		if (skipThreadNavigationRecordRef.current) {
-			skipThreadNavigationRecordRef.current = false;
-			return;
-		}
-		setThreadNavigation((prev) => {
-			const base = prev.index >= 0 ? prev.history.slice(0, prev.index + 1) : [];
-			if (base[base.length - 1] === currentId) {
-				return prev;
-			}
-			const history = [...base, currentId].slice(-40);
-			return { history, index: history.length - 1 };
-		});
-	}, [currentId]);
-
 	useEffect(() => {
 		document.body.style.zoom = String(uiZoom);
 		return () => {
@@ -1764,99 +1608,6 @@ export default function App() {
 		};
 	}, [uiZoom]);
 
-	const refreshThreads = useCallback(async () => {
-		if (!shell) {
-			return null;
-		}
-		const r = (await shell.invoke('threads:list')) as {
-			threads: ThreadInfo[];
-			currentId: string | null;
-		};
-		setThreads((r.threads ?? []).map(normalizeThreadRow));
-		setCurrentId(r.currentId);
-		return r.currentId;
-	}, [shell]);
-
-	const loadMessages = useCallback(
-		async (id: string) => {
-			if (!shell) {
-				return;
-			}
-			const r = (await shell.invoke('threads:messages', id)) as {
-				ok: boolean;
-				messages?: ChatMessage[];
-			};
-			if (r.ok && r.messages) {
-				if (currentIdRef.current !== id) {
-					return;
-				}
-				setMessages(r.messages);
-				setMessagesThreadId(id);
-			}
-		},
-		[shell]
-	);
-
-	const refreshGit = useCallback(async () => {
-		if (!shell) {
-			return;
-		}
-		type StatusR =
-			| { ok: true; branch: string; lines: string[]; pathStatus?: GitPathStatusMap; changedPaths?: string[] }
-			| { ok: false; error?: string };
-		type ListR = { ok: true; branches: string[]; current: string } | { ok: false; error?: string };
-		const [r, lb] = (await Promise.all([
-			shell.invoke('git:status'),
-			shell.invoke('git:listBranches'),
-		])) as [StatusR, ListR];
-		if (r.ok) {
-			setGitStatusOk(true);
-			setGitBranch(r.branch || 'master');
-			setGitLines(r.lines);
-			setGitPathStatus(r.pathStatus ?? {});
-			setGitChangedPaths(r.changedPaths ?? []);
-			if (lb.ok) {
-				setGitBranchList(Array.isArray(lb.branches) ? lb.branches : []);
-				setGitBranchListCurrent(typeof lb.current === 'string' ? lb.current : '');
-			} else {
-				setGitBranchList([]);
-				setGitBranchListCurrent('');
-			}
-		} else {
-			setGitStatusOk(false);
-			setGitBranch('—');
-			setGitLines([r.error ?? 'Failed to load changes']);
-			setGitPathStatus({});
-			setGitChangedPaths([]);
-			setGitBranchList([]);
-			setGitBranchListCurrent('');
-		}
-		setTreeEpoch((n) => n + 1);
-	}, [shell]);
-
-	const onGitBranchListFresh = useCallback((b: string[], c: string) => {
-		setGitBranchList(b);
-		setGitBranchListCurrent(c);
-	}, []);
-
-	const clearAgentReviewForThread = useCallback((threadId: string) => {
-		setAgentReviewPendingByThread((prev) => {
-			const next = { ...prev };
-			delete next[threadId];
-			return next;
-		});
-	}, []);
-
-	const flashComposerAttachErr = useCallback((msg: string) => {
-		if (composerAttachErrTimerRef.current !== null) {
-			window.clearTimeout(composerAttachErrTimerRef.current);
-		}
-		setComposerAttachErr(msg);
-		composerAttachErrTimerRef.current = window.setTimeout(() => {
-			setComposerAttachErr(null);
-			composerAttachErrTimerRef.current = null;
-		}, 4200);
-	}, []);
 
 	const showTransientToast = useCallback((ok: boolean, text: string) => {
 		if (subAgentBgToastTimerRef.current !== null) {
@@ -2752,141 +2503,8 @@ export default function App() {
 	}, [shell, loadMessages, refreshThreads, clearStreamingToolPreviewNow, resetLiveAgentBlocks, t, composerMode]);
 
 	useEffect(() => {
-		if (!workspace || !shell) {
-			return;
-		}
-		void refreshGit();
-	}, [workspace, shell, refreshGit]);
-
-	useEffect(() => {
-		const sub = shell?.subscribeWorkspaceFsTouched;
-		if (!shell || !sub) {
-			return;
-		}
-		const unsub = sub(() => {
-			void refreshGit();
-		});
-		return unsub;
-	}, [shell, refreshGit]);
-
-	useEffect(() => {
-		if (!shell || !workspace) {
-			setWorkspaceFileList([]);
-			return;
-		}
-		let cancelled = false;
-		void (async () => {
-			const r = (await shell.invoke('workspace:listFiles')) as
-				| { ok: true; paths: string[] }
-				| { ok: false; error?: string };
-			if (cancelled) {
-				return;
-			}
-			if (r.ok && Array.isArray(r.paths)) {
-				setWorkspaceFileList(r.paths);
-			} else {
-				setWorkspaceFileList([]);
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [shell, workspace]);
-
-	useEffect(() => {
 		monacoWorkspaceRootRef.current = workspace;
 	}, [workspace]);
-
-	useEffect(() => {
-		if (!shell) {
-			return;
-		}
-		if (!workspace) {
-			setTsLspStatus('off');
-			void shell.invoke('lsp:ts:stop').catch(() => {});
-			return;
-		}
-		if (!indexingSettings.tsLspEnabled) {
-			setTsLspStatus('off');
-			void shell.invoke('lsp:ts:stop').catch(() => {});
-			return;
-		}
-		let cancelled = false;
-		setTsLspStatus('starting');
-		void shell.invoke('lsp:ts:start', workspace).then((r: unknown) => {
-			if (cancelled) {
-				return;
-			}
-			const ok = (r as { ok?: boolean })?.ok;
-			setTsLspStatus(ok ? 'ready' : 'error');
-		});
-		return () => {
-			cancelled = true;
-		};
-	}, [shell, workspace, indexingSettings.tsLspEnabled]);
-
-	useEffect(() => {
-		if (!shell) {
-			setHomeRecents([]);
-			setFolderRecents([]);
-			return;
-		}
-		if (workspace) {
-			setHomeRecents([]);
-		}
-		let cancelled = false;
-		void (async () => {
-			try {
-				const r = (await shell.invoke('workspace:listRecents')) as { paths?: string[] };
-				if (cancelled) return;
-				const paths = Array.isArray(r.paths) ? r.paths : [];
-				if (!workspace) {
-					setHomeRecents(paths);
-				}
-				setFolderRecents(paths.slice(0, 14));
-			} catch {
-				if (!cancelled) {
-					setHomeRecents([]);
-					setFolderRecents([]);
-				}
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [shell, workspace]);
-
-	useEffect(() => {
-		if (!workspace) {
-			return;
-		}
-		setHiddenAgentWorkspacePaths((prev) => prev.filter((item) => item !== workspace));
-		setCollapsedAgentWorkspacePaths((prev) => prev.filter((item) => item !== workspace));
-	}, [workspace]);
-
-	useEffect(() => {
-		if (!shell || gitChangedPaths.length === 0) {
-			setDiffPreviews({});
-			setDiffLoading(false);
-			return;
-		}
-		setDiffLoading(true);
-		let cancelled = false;
-		void (async () => {
-			const r = (await shell.invoke('git:diffPreviews', gitChangedPaths)) as
-				| { ok: true; previews: Record<string, DiffPreview> }
-				| { ok: false };
-			if (!cancelled && r.ok) {
-				setDiffPreviews(r.previews);
-			}
-			if (!cancelled) {
-				setDiffLoading(false);
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [shell, treeEpoch, gitPathsKey]);
 
 	const applyWorkspacePath = useCallback(
 		async (next: string) => {
@@ -7050,8 +6668,9 @@ export default function App() {
 		);
 	};
 
-	const renderChatMessageList = (hideModeReset = false): ReactNode[] =>
-		displayMessages.map((m, i) => {
+	const renderChatMessageList = (hideModeReset = false): ReactNode[] => {
+		const t0 = import.meta.env.DEV ? performance.now() : 0;
+		const nodes = displayMessages.map((m, i) => {
 			const convoKey = messagesThreadId ?? currentId ?? 'no-thread';
 			const isLast = i === displayMessages.length - 1;
 			const stAt = streamStartedAtRef.current;
@@ -7237,6 +6856,17 @@ export default function App() {
 				</div>
 			);
 		});
+		if (import.meta.env.DEV) {
+			const elapsed = performance.now() - t0;
+			if (elapsed > 12) {
+				// eslint-disable-next-line no-console
+				console.log(
+					`[perf] renderChatMessageList: ${elapsed.toFixed(1)}ms, messages=${displayMessages.length}, workspaceFiles=${workspaceFileList.length}, awaiting=${awaitingReply}`
+				);
+			}
+		}
+		return nodes;
+	};
 
 	const renderAgentConversationBelowContext = (
 		layout: 'agent-center' | 'editor-rail' = 'agent-center'

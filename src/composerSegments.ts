@@ -90,6 +90,27 @@ export function isSlashCommandDomPendingUpgrade(
  * 历史消息里可能仍是 ZWNJ（\u200c），解析端保留兼容。
  */
 const FILE_REF_GLUE_SPACE = ' ';
+const normalizedKnownPathsCache = new WeakMap<string[], string[]>();
+
+function normalizedKnownPaths(knownPaths: string[]): string[] {
+	const cached = normalizedKnownPathsCache.get(knownPaths);
+	if (cached) {
+		return cached;
+	}
+	const t0 = import.meta.env.DEV ? performance.now() : 0;
+	const normalized = [...new Set(knownPaths.map((p) => p.replace(/\\/g, '/')))].sort((a, b) => b.length - a.length);
+	if (import.meta.env.DEV) {
+		const elapsed = performance.now() - t0;
+		if (elapsed > 8) {
+			// eslint-disable-next-line no-console
+			console.log(
+				`[perf] normalizedKnownPaths: ${elapsed.toFixed(1)}ms, in=${knownPaths.length}, out=${normalized.length}`
+			);
+		}
+	}
+	normalizedKnownPathsCache.set(knownPaths, normalized);
+	return normalized;
+}
 
 /** 发送给后端的纯文本：与内联 chip 顺序一致 */
 export function segmentsToWireText(segments: ComposerSegment[]): string {
@@ -164,7 +185,7 @@ function isFileRefBoundary(char: string | undefined): boolean {
 
 /** 按最长路径匹配内联 `@相对路径` */
 export function wirePlainToSegments(text: string, knownPaths: string[]): ComposerSegment[] {
-	const paths = [...new Set(knownPaths.map((p) => p.replace(/\\/g, '/')))].sort((a, b) => b.length - a.length);
+	const paths = normalizedKnownPaths(knownPaths);
 	const out: ComposerSegment[] = [];
 	let i = 0;
 	let textBuf = '';

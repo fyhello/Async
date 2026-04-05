@@ -323,11 +323,22 @@ export function WorkspaceExplorer({
 	const menuCanBrowser = menuEnt
 		? !menuEnt.isDirectory && ['.html', '.htm', '.svg'].includes(fileExtLower(menuEnt.name))
 		: false;
+	const treeRenderStartedAt = import.meta.env.DEV ? performance.now() : 0;
+	const treeNodes = renderDir('', 0);
+	if (import.meta.env.DEV) {
+		const elapsed = performance.now() - treeRenderStartedAt;
+		if (elapsed > 10) {
+			// eslint-disable-next-line no-console
+			console.log(
+				`[perf] WorkspaceExplorer render: ${elapsed.toFixed(1)}ms, expanded=${expanded.size}, cachedDirs=${Object.keys(cache).length}, statusPaths=${statusPaths.length}`
+			);
+		}
+	}
 
 	return (
 		<div className="ref-explorer-tree-wrap">
 			<div className="ref-explorer-tree" role="tree">
-				{renderDir('', 0)}
+				{treeNodes}
 			</div>
 			{menu && actions && menuEnt ? (
 				<div
