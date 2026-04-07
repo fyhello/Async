@@ -89,7 +89,12 @@ export type ToolCallSegment = {
 
 export type PlanTodoSegment = {
 	type: 'plan_todo';
-	todos: Array<{ id: string; content: string; status: 'pending' | 'completed' }>;
+	todos: Array<{
+		id: string;
+		content: string;
+		status: 'pending' | 'in_progress' | 'completed';
+		activeForm?: string;
+	}>;
 };
 
 export type StreamingToolPreview = {
@@ -992,6 +997,21 @@ function summarizeToolActivity(mk: ParsedMarker, t: TFunction): ActivitySegment 
 				mk
 			);
 		}
+		case 'TodoWrite': {
+			return withNestActivity(
+				{
+					type: 'activity',
+					text: inProgress
+						? t('agent.toolPending', { name: 'TodoWrite' })
+						: failed
+							? t('agent.activity.cmdFailed', { cmd: 'TodoWrite' })
+							: t('agent.todoWrite.updated'),
+					status: inProgress ? 'pending' : failed ? 'error' : 'success',
+					detail,
+				},
+				mk
+			);
+		}
 		default:
 			return withNestActivity(
 				{
@@ -1273,7 +1293,25 @@ function extractToolSegments(content: string, t: TFunction): { segments: Assista
 				segments.push(pendingEdit);
 			}
 		} else {
-			segments.push(activity);
+			// TodoWrite: render as plan_todo segment instead of generic activity
+			if (mk.name === 'TodoWrite') {
+				const todosRaw = Array.isArray(mk.args.todos) ? mk.args.todos : [];
+				const todos = todosRaw.map((t: Record<string, unknown>, idx: number) => ({
+					id: `todo-${mk.start}-${idx}`,
+					content: String(t.content ?? ''),
+					status: (['pending', 'in_progress', 'completed'].includes(String(t.status))
+						? String(t.status)
+						: 'pending') as 'pending' | 'in_progress' | 'completed',
+					activeForm: typeof t.activeForm === 'string' ? t.activeForm : undefined,
+				}));
+				if (todos.length > 0) {
+					segments.push({ type: 'plan_todo', todos });
+				} else {
+					segments.push(activity);
+				}
+			} else {
+				segments.push(activity);
+			}
 		}
 
 		cursor = mk.end;

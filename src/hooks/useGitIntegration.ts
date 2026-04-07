@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { GitPathStatusMap } from '../WorkspaceExplorer';
 
 type Shell = NonNullable<Window['asyncShell']>;
@@ -50,7 +50,6 @@ export function useGitIntegration(shell: Shell | undefined, workspace: string | 
 			setGitBranchList(Array.isArray(r.branches) ? r.branches : []);
 			setGitBranchListCurrent(typeof r.current === 'string' ? r.current : '');
 			
-			// 直接获取 diffPreviews
 			const changedPaths = r.changedPaths ?? [];
 			if (changedPaths.length > 0) {
 				setDiffLoading(true);
@@ -66,6 +65,9 @@ export function useGitIntegration(shell: Shell | undefined, workspace: string | 
 				} finally {
 					setDiffLoading(false);
 				}
+			} else {
+				setDiffPreviews({});
+				setDiffLoading(false);
 			}
 		} else {
 			setGitStatusOk(false);
@@ -111,73 +113,6 @@ export function useGitIntegration(shell: Shell | undefined, workspace: string | 
 		);
 		return () => cancel(id);
 	}, [workspace, shell, refreshGit]);
-
-	// 注意：已移除文件系统变化时的自动刷新
-	// Git 状态现在只在以下场景刷新：
-	// 1. workspace 变化时
-	// 2. 用户打开源代码管理视图时（由组件手动调用 refreshGit）
-	// 3. AI 修改代码后（agent review/commit/revert 等操作）
-	// 这样可以避免高频的文件系统事件导致不必要的 Git 命令执行
-
-	// diffPreviews 懒加载：作为备用机制（现在主要在 refreshGit 中直接获取）
-	const diffPreviewsGenRef = useRef(0);
-	const gitPathsKey = useMemo(() => gitChangedPaths.join('\n'), [gitChangedPaths]);
-	useEffect(() => {
-		if (!shell || gitChangedPaths.length === 0) {
-			setDiffPreviews({});
-			setDiffLoading(false);
-			return;
-		}
-		const gen = ++diffPreviewsGenRef.current;
-		setDiffLoading(true);
-		let cancelled = false;
-		let fetchStarted = false;
-		const pathsSnapshot = gitChangedPaths;
-		const idle =
-			typeof window.requestIdleCallback === 'function'
-				? window.requestIdleCallback.bind(window)
-				: (cb: IdleRequestCallback) =>
-						window.setTimeout(
-							() => cb({ didTimeout: true, timeRemaining: () => 0 } as IdleDeadline),
-							1
-						);
-		const cancelIdle =
-			typeof window.cancelIdleCallback === 'function'
-				? window.cancelIdleCallback.bind(window)
-				: (id: number) => window.clearTimeout(id);
-		const idleId = idle(
-			() => {
-				if (cancelled) {
-					return;
-				}
-				fetchStarted = true;
-				void (async () => {
-					try {
-						const r = (await shell.invoke('git:diffPreviews', pathsSnapshot)) as
-							| { ok: true; previews: Record<string, DiffPreview> }
-							| { ok: false };
-						if (!cancelled && gen === diffPreviewsGenRef.current && r.ok) {
-							setDiffPreviews(r.previews);
-						}
-					} finally {
-						if (!cancelled && gen === diffPreviewsGenRef.current) {
-							setDiffLoading(false);
-						}
-					}
-				})();
-			},
-			{ timeout: 2500 }
-		);
-		return () => {
-			cancelled = true;
-			cancelIdle(idleId);
-			if (!fetchStarted && gen === diffPreviewsGenRef.current) {
-				setDiffLoading(false);
-			}
-		};
-	// treeEpoch 确保文件系统变化后也重新拉取
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [shell, treeEpoch, gitPathsKey]);
 
 	const diffTotals = useMemo(() => {
 		let additions = 0,

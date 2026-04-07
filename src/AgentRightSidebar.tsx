@@ -3,11 +3,9 @@ import { AgentFilePreviewPanel } from './AgentFilePreviewPanel';
 import { ChatMarkdown } from './ChatMarkdown';
 import { VoidSelect } from './VoidSelect';
 import { GitUnavailableState } from './gitBadge';
-import { changeBadgeLabel } from './gitBadge';
 import {
 	IconCloseSmall,
 	IconDoc,
-	IconEye,
 	IconGitSCM,
 	IconRefresh,
 	IconArrowUp,
@@ -19,6 +17,7 @@ import type { PlanTodoItem, ParsedPlan } from './planParser';
 import { gitUnavailableCopy, type GitUnavailableReason } from './gitAvailability';
 import type { AgentFilePreviewState } from './hooks/useAgentFileReview';
 import type { GitPathStatusMap } from './WorkspaceExplorer';
+import { AgentGitScmChangedCards } from './GitScmVirtualLists';
 
 type AgentRightSidebarView = 'git' | 'plan' | 'file';
 type DiffPreview = { diff: string; isBinary: boolean; additions: number; deletions: number };
@@ -79,55 +78,6 @@ export type AgentRightSidebarProps = {
 	onCommitAndPush: () => void;
 	gitActionError: string | null;
 };
-
-/** 侧栏卡片：去掉 `diff --git` / `index` / `---` / `+++` 文件头；并省略 `@@ … @@` hunk 行（仅预览里不展示行号范围头，正文仍是标准 unified diff 的 +/- 与上下文行） */
-function trimGitDiffForSidebarCard(raw: string): string {
-	const lines = raw.split('\n');
-	const idx = lines.findIndex((l) => l.startsWith('@@'));
-	if (idx < 0) {
-		return raw;
-	}
-	const body = lines.slice(idx).filter((l) => !l.startsWith('@@'));
-	return body.join('\n');
-}
-
-function gitSidebarDiffLineClass(line: string): string {
-	const base = 'ref-git-diff-line';
-	if (line.startsWith('+') && !line.startsWith('+++')) {
-		return `${base} is-add`;
-	}
-	if (line.startsWith('-') && !line.startsWith('---')) {
-		return `${base} is-del`;
-	}
-	if (
-		line.startsWith('diff --git') ||
-		line.startsWith('index ') ||
-		line.startsWith('--- ') ||
-		line.startsWith('+++ ') ||
-		line.startsWith('Binary files ') ||
-		line.startsWith('GIT binary patch')
-	) {
-		return `${base} is-meta`;
-	}
-	return base;
-}
-
-function GitDiffLines({ diff, t }: { diff: string; t: TFunction }) {
-	const trimmed = trimGitDiffForSidebarCard(diff);
-	const lines = trimmed.split('\n').slice(0, 120);
-	return (
-		<div className="ref-git-card-diff" role="region" aria-label={t('git.diffPreview')}>
-			{lines.map((line, i) => {
-				const mod = gitSidebarDiffLineClass(line);
-				return (
-					<div key={i} className={mod}>
-						{line || '\u00a0'}
-					</div>
-				);
-			})}
-		</div>
-	);
-}
 
 type CommitAction = 'commit' | 'commit-push' | 'commit-pr';
 
@@ -707,44 +657,14 @@ export const AgentRightSidebar = memo(function AgentRightSidebar({
 								{gitUnavailableReason !== 'none' ? (
 									<GitUnavailableState t={t} reason={gitUnavailableReason} detail={gitLines[0] ?? ''} />
 								) : changeCount > 0 ? (
-									<div className="ref-git-cards">
-										{gitChangedPaths.map((rel) => {
-											const pr = diffPreviews[rel];
-											const st = gitPathStatus[rel];
-											const badge = st ? changeBadgeLabel(st.label, t) : t('app.gitChangedFallback');
-											return (
-												<div key={rel} className="ref-git-card">
-													<div className="ref-git-card-head">
-														<span className="ref-git-card-name" title={rel}>
-															{rel.includes('/') ? rel.slice(rel.lastIndexOf('/') + 1) : rel}
-														</span>
-														<span className="ref-git-card-badge">{badge}</span>
-														<button
-															type="button"
-															className="ref-git-card-open"
-															aria-label={t('app.gitPreviewAria')}
-															title={t('app.gitPreviewTitle')}
-															onClick={() => onOpenGitDiff(rel, pr?.diff ?? null)}
-														>
-															<IconEye />
-														</button>
-													</div>
-													<div className="ref-git-card-body">
-														{diffLoading && !pr ? (
-															<div className="ref-git-card-skel">{t('app.gitDiffLoading')}</div>
-														) : null}
-														{pr?.isBinary ? (
-															<div className="ref-git-binary-msg">{pr.diff || t('app.gitBinary')}</div>
-														) : null}
-														{pr && !pr.isBinary && pr.diff ? <GitDiffLines diff={pr.diff} t={t} /> : null}
-														{pr && !pr.isBinary && !pr.diff ? (
-															<div className="ref-git-binary-msg">{t('app.gitNoPreview')}</div>
-														) : null}
-													</div>
-												</div>
-											);
-										})}
-									</div>
+									<AgentGitScmChangedCards
+										paths={gitChangedPaths}
+										diffPreviews={diffPreviews}
+										gitPathStatus={gitPathStatus}
+										diffLoading={diffLoading}
+										t={t}
+										onOpenGitDiff={onOpenGitDiff}
+									/>
 								) : null}
 								{gitUnavailableReason === 'none' && gitActionError ? (
 									<p className="ref-git-action-error">{gitActionError}</p>

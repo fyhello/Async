@@ -34,6 +34,7 @@ import {
 	patchMcpServerConfigs,
 	removeMcpServerConfig,
 } from '../settingsStore.js';
+import { checkForUpdates, downloadUpdate, quitAndInstall, getStatus, type AutoUpdateStatus } from '../autoUpdate.js';
 import { getMcpManager, destroyMcpManager } from '../mcp';
 import type { McpServerConfig } from '../mcp';
 import {
@@ -450,6 +451,7 @@ function runChatStream(
 						onMistakeLimitReached,
 						workspaceRoot,
 						toolLspSession,
+						threadId,
 						toolHooks: {
 							beforeWrite: ({ path, previousContent }) => {
 								const snapshots = agentRevertSnapshotsByThread.get(threadId);
@@ -2360,7 +2362,7 @@ ipcMain.handle(
 				const fullDiffRaw = await gitService.gitDiffHeadUnified(root);
 				const tDiff1 = dev ? performance.now() : 0;
 				const tBuild0 = dev ? performance.now() : 0;
-				const previews = await gitService.buildDiffPreviewsMap(list, fullDiffRaw, root, probe.topLevel);
+				const previews = await gitService.buildDiffPreviewsMap(list, fullDiffRaw, root, probe.topLevel, { maxChars: 4_000 });
 				if (dev) {
 					const tDone = performance.now();
 					console.log(
@@ -2656,5 +2658,39 @@ ipcMain.handle(
 	ipcMain.handle('mcp:destroy', () => {
 		destroyMcpManager();
 		return { ok: true as const };
+	});
+
+	/** 自动更新：检查更新 */
+	ipcMain.handle('auto-update:check', async (): Promise<AutoUpdateStatus> => {
+		try {
+			return await checkForUpdates();
+		} catch (e) {
+			return { state: 'error', message: String(e) };
+		}
+	});
+
+	/** 自动更新：下载更新 */
+	ipcMain.handle('auto-update:download', async (): Promise<{ ok: boolean; error?: string }> => {
+		try {
+			await downloadUpdate();
+			return { ok: true };
+		} catch (e) {
+			return { ok: false, error: String(e) };
+		}
+	});
+
+	/** 自动更新：重启并安装 */
+	ipcMain.handle('auto-update:install', (): Promise<{ ok: boolean; error?: string }> => {
+		try {
+			quitAndInstall();
+			return Promise.resolve({ ok: true });
+		} catch (e) {
+			return Promise.resolve({ ok: false, error: String(e) });
+		}
+	});
+
+	/** 自动更新：获取当前状态 */
+	ipcMain.handle('auto-update:get-status', (): AutoUpdateStatus => {
+		return getStatus();
 	});
 }

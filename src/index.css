@@ -13425,6 +13425,30 @@ select.ref-settings-native-select:focus {
 	min-width: 0;
 }
 
+.ref-plan-todo.is-active {
+	color: var(--accent, #6ea8fe);
+}
+
+.ref-plan-todo.is-active .ref-plan-todo-text {
+	font-style: italic;
+}
+
+.ref-plan-todo-spinner {
+	display: inline-block;
+	width: 16px;
+	height: 16px;
+	border: 2px solid transparent;
+	border-top-color: var(--accent, #6ea8fe);
+	border-left-color: var(--accent, #6ea8fe);
+	border-radius: 50%;
+	animation: ref-plan-todo-spin 0.8s linear infinite;
+	flex-shrink: 0;
+}
+
+@keyframes ref-plan-todo-spin {
+	to { transform: rotate(360deg); }
+}
+
 .ref-plan-review-foot {
 	display: flex;
 	justify-content: flex-end;
