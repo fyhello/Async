@@ -680,6 +680,7 @@ export function registerIpc(): void {
 	});
 
 	ipcMain.handle('workspace:openPath', (event, dirPath: string) => {
+		const t0 = performance.now();
 		try {
 			const resolved = path.resolve(String(dirPath ?? ''));
 			if (!fs.existsSync(resolved)) {
@@ -697,21 +698,25 @@ export function registerIpc(): void {
 			}
 			rememberWorkspace(resolved);
 			void ensureWorkspaceFileIndex(resolved).catch(() => {});
+			console.log(`[perf][main] workspace:openPath done in ${(performance.now() - t0).toFixed(1)}ms`);
 			return { ok: true as const, path: resolved };
 		} catch (e) {
 			return { ok: false as const, error: String(e) };
 		}
 	});
 
-	ipcMain.handle('workspace:listRecents', () => ({
-		paths: getRecentWorkspaces().filter((p) => {
+	ipcMain.handle('workspace:listRecents', () => {
+		const t0 = performance.now();
+		const paths = getRecentWorkspaces().filter((p) => {
 			try {
 				return fs.existsSync(p) && fs.statSync(p).isDirectory();
 			} catch {
 				return false;
 			}
-		}),
-	}));
+		});
+		console.log(`[perf][main] workspace:listRecents done in ${(performance.now() - t0).toFixed(1)}ms, count=${paths.length}`);
+		return { paths };
+	});
 
 	ipcMain.handle('workspace:removeRecent', (_e, dirPath: string) => {
 		try {
@@ -1179,57 +1184,73 @@ export function registerIpc(): void {
 		};
 	});
 
-	ipcMain.handle('threads:list', (event) => {
+	// 每处理 BATCH_SIZE 条 thread 后通过 setImmediate 让出一次主进程事件循环，
+	// 防止 summarizeThreadForSidebar 对大量/长消息的 thread 进行批量 diff 扫描时
+	// 阻塞主进程，导致 Electron 窗口拖动等原生事件无法响应。
+	const THREAD_SUMMARIZE_BATCH = 8;
+	function yieldToEventLoop(): Promise<void> {
+		return new Promise((resolve) => setImmediate(resolve));
+	}
+
+	ipcMain.handle('threads:list', async (event) => {
+		const t0 = performance.now();
 		const scope = senderWorkspaceRoot(event);
 		ensureDefaultThread(scope);
 		const now = Date.now();
-		return {
-			threads: listThreads(scope).map((t) => {
-				const sum = summarizeThreadForSidebar(t);
-				return {
-					id: t.id,
-					title: t.title,
-					updatedAt: t.updatedAt,
-					createdAt: t.createdAt,
-					previewCount: t.messages.filter((m) => m.role !== 'system').length,
-					hasUserMessages: threadHasUserMessages(t),
-					isToday: isTimestampToday(t.updatedAt, now),
-					tokenUsage: t.tokenUsage,
-					fileStateCount: t.fileStates ? Object.keys(t.fileStates).length : 0,
-					...sum,
-				};
-			}),
-			currentId: getCurrentThreadId(scope),
-		};
+		const raw = listThreads(scope);
+		console.log(`[perf][main] threads:list listThreads=${(performance.now() - t0).toFixed(1)}ms count=${raw.length}`);
+		const threads = [];
+		for (let i = 0; i < raw.length; i++) {
+			const t = raw[i]!;
+			const sum = summarizeThreadForSidebar(t);
+			threads.push({
+				id: t.id,
+				title: t.title,
+				updatedAt: t.updatedAt,
+				createdAt: t.createdAt,
+				previewCount: t.messages.filter((m) => m.role !== 'system').length,
+				hasUserMessages: threadHasUserMessages(t),
+				isToday: isTimestampToday(t.updatedAt, now),
+				tokenUsage: t.tokenUsage,
+				fileStateCount: t.fileStates ? Object.keys(t.fileStates).length : 0,
+				...sum,
+			});
+			if ((i + 1) % THREAD_SUMMARIZE_BATCH === 0) {
+				await yieldToEventLoop();
+			}
+		}
+		console.log(`[perf][main] threads:list total=${(performance.now() - t0).toFixed(1)}ms summarized=${threads.length}`);
+		return { threads, currentId: getCurrentThreadId(scope) };
 	});
 
-	ipcMain.handle('threads:listAgentSidebar', (event, rawPaths: unknown) => {
+	ipcMain.handle('threads:listAgentSidebar', async (event, rawPaths: unknown) => {
 		const activeRoot = senderWorkspaceRoot(event);
 		const paths = Array.isArray(rawPaths)
 			? rawPaths.map((p) => String(p ?? '').trim()).filter((p) => p.length > 0)
 			: [];
 		const now = Date.now();
-		const workspaces = paths.map((dirPath) => {
+		const workspaces = [];
+		for (const dirPath of paths) {
 			let resolved: string;
 			try {
 				resolved = path.resolve(dirPath);
 				if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-					return {
-						requestedPath: dirPath,
-						resolvedPath: null as string | null,
-						threads: [],
-						currentId: null as string | null,
-					};
+					workspaces.push({ requestedPath: dirPath, resolvedPath: null as string | null, threads: [], currentId: null as string | null });
+					continue;
 				}
 			} catch {
-				return { requestedPath: dirPath, resolvedPath: null, threads: [], currentId: null };
+				workspaces.push({ requestedPath: dirPath, resolvedPath: null, threads: [], currentId: null });
+				continue;
 			}
 			if (activeRoot && workspaceRootsEqual(resolved, activeRoot)) {
 				ensureDefaultThread(activeRoot);
 			}
-			const threads = listThreads(resolved).map((t) => {
+			const raw = listThreads(resolved);
+			const threads = [];
+			for (let i = 0; i < raw.length; i++) {
+				const t = raw[i]!;
 				const sum = summarizeThreadForSidebar(t);
-				return {
+				threads.push({
 					id: t.id,
 					title: t.title,
 					updatedAt: t.updatedAt,
@@ -1240,15 +1261,13 @@ export function registerIpc(): void {
 					tokenUsage: t.tokenUsage,
 					fileStateCount: t.fileStates ? Object.keys(t.fileStates).length : 0,
 					...sum,
-				};
-			});
-			return {
-				requestedPath: dirPath,
-				resolvedPath: resolved,
-				threads,
-				currentId: getCurrentThreadId(resolved),
-			};
-		});
+				});
+				if ((i + 1) % THREAD_SUMMARIZE_BATCH === 0) {
+					await yieldToEventLoop();
+				}
+			}
+			workspaces.push({ requestedPath: dirPath, resolvedPath: resolved, threads, currentId: getCurrentThreadId(resolved) });
+		}
 		return { workspaces };
 	});
 

@@ -1237,7 +1237,9 @@ function AppMainWorkspaceInner() {
 		return ordered;
 	}, [folderRecents, workspace]);
 
-	useEffect(() => {
+	// useLayoutEffect：commit 后同步执行，避免 useEffect 异步触发导致在两个 paint 帧间
+	// 出现额外的 agentSidebarWorkspaces 无效渲染。
+	useLayoutEffect(() => {
 		setAgentWorkspaceOrder((prev) => {
 			const candidateSet = new Set(agentSidebarWorkspaceCandidates);
 			const next = prev.filter((path) => candidateSet.has(path));
@@ -1851,7 +1853,8 @@ function AppMainWorkspaceInner() {
 		return () => window.clearTimeout(id);
 	}, [layoutMode, editorLeftSidebarView]);
 
-	useEffect(() => {
+	// useLayoutEffect：与上方 agentWorkspaceOrder 同理，避免额外 paint 帧。
+	useLayoutEffect(() => {
 		setEditorExplorerCollapsed(false);
 	}, [workspace]);
 
@@ -1890,14 +1893,18 @@ function AppMainWorkspaceInner() {
 					/* ignore */
 				}
 			};
+			const t0 = performance.now();
+			console.log(`[perf][renderer] workspace switch START → ${next}`);
 			mark('start');
 			clearWorkspaceConversationState();
 			setWorkspace(next);
 			mark('workspace-set');
+			console.log(`[perf][renderer] workspace:openPath+setState done in ${(performance.now() - t0).toFixed(1)}ms`);
 			// 并行而非串行，且 refreshGit 由 workspace 变化的 effect 触发，此处不重复调用
 			await refreshThreads();
 			mark('threads-done');
 			measure('void-ws:apply-path:threads', 'start', 'threads-done');
+			console.log(`[perf][renderer] refreshThreads IPC round-trip done in ${(performance.now() - t0).toFixed(1)}ms`);
 		},
 		[clearWorkspaceConversationState, refreshThreads]
 	);
@@ -4198,7 +4205,7 @@ function AppMainWorkspaceInner() {
 			atMention.syncAtFromRich(root, slot);
 			slashCommand.syncSlashFromRich(root, slot);
 		},
-		[atMention, slashCommand]
+		[atMention.syncAtFromRich, slashCommand.closeSlashMenu, slashCommand.syncSlashFromRich]
 	);
 	closeAtMenuLatestRef.current = atMention.closeAtMenu;
 
@@ -4743,7 +4750,10 @@ function AppMainWorkspaceInner() {
 
 	useEffect(() => {
 		const onResize = () => {
-			setRailWidths((prev) => clampSidebarLayout(prev.left, prev.right));
+			setRailWidths((prev) => {
+				const next = clampSidebarLayout(prev.left, prev.right);
+				return next.left === prev.left && next.right === prev.right ? prev : next;
+			});
 			setEditorTerminalHeightPx((h) => clampEditorTerminalHeight(h));
 		};
 		window.addEventListener('resize', onResize);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, startTransition } from 'react';
 import { type ChatMessage, type ThreadInfo, normalizeThreadRow } from '../threadTypes';
 import { normWorkspaceRootKey } from '../workspaceRootKey';
 
@@ -23,10 +23,14 @@ export function useThreads(shell: Shell | undefined) {
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	const [messages, setMessages] = useState<ChatMessage[]>([]);
+	const [msgState, setMsgState] = useState<{ messages: ChatMessage[]; threadId: string | null }>({
+		messages: [],
+		threadId: null,
+	});
+	const messages = msgState.messages;
+	const messagesThreadId = msgState.threadId;
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
-	const [messagesThreadId, setMessagesThreadId] = useState<string | null>(null);
 
 	/** Agent 侧栏：按工作区根路径归一化键索引的线程摘要（非当前工作区不经过 threads:list） */
 	const [sidebarThreadsByPathKey, setSidebarThreadsByPathKey] = useState<Record<string, ThreadInfo[]>>({});
@@ -43,7 +47,9 @@ export function useThreads(shell: Shell | undefined) {
 	const skipThreadNavigationRecordRef = useRef(false);
 
 	// currentId 变化时更新导航历史
-	useEffect(() => {
+	// 用 useLayoutEffect 而非 useEffect：commit 后立即同步执行，setState 触发的重渲在同一帧内
+	// 完成，避免 useEffect 异步调度导致多出一个可见的 paint 周期。
+	useLayoutEffect(() => {
 		if (!currentId) return;
 		if (skipThreadNavigationRecordRef.current) {
 			skipThreadNavigationRecordRef.current = false;
@@ -66,8 +72,10 @@ export function useThreads(shell: Shell | undefined) {
 			threads: ThreadInfo[];
 			currentId: string | null;
 		};
-		setThreads((r.threads ?? []).map(normalizeThreadRow));
+		// setCurrentId 必须紧急（触发 loadMessages effect 和导航历史更新）。
+		// setThreads 是侧栏列表，非紧急，用 transition 避免阻塞消息加载路径。
 		setCurrentId(r.currentId);
+		startTransition(() => setThreads((r.threads ?? []).map(normalizeThreadRow)));
 		if (t0 && typeof performance !== 'undefined') {
 			console.log(`[perf] refreshThreads: ${(performance.now() - t0).toFixed(1)}ms`);
 		}
@@ -102,7 +110,8 @@ export function useThreads(shell: Shell | undefined) {
 				}
 				next[normWorkspaceRootKey(keySource)] = (w.threads ?? []).map(normalizeThreadRow);
 			}
-			setSidebarThreadsByPathKey(next);
+			// sidebar 线程列表是非紧急更新，用 startTransition 避免 IPC 返回后的 132ms 渲染阻塞主线程。
+			startTransition(() => setSidebarThreadsByPathKey(next));
 		},
 		[shell]
 	);
@@ -140,8 +149,11 @@ export function useThreads(shell: Shell | undefined) {
 						`[perf] loadMessages: payload messages=${r.messages.length}, approxContentChars=${approxContentChars}`
 					);
 				}
-				setMessages(r.messages);
-				setMessagesThreadId(id);
+				// startTransition：消息渲染是非紧急更新，React 可在渲染期间让出主线程给输入事件。
+				// 实测 76KB 内容 4 条消息渲染耗时 117ms，不用 transition 会触发 longtask 阻塞窗口拖动。
+				startTransition(() => {
+					setMsgState({ messages: r.messages!, threadId: id });
+				});
 				if (dev && typeof performance !== 'undefined') {
 					const ipcEnd = tIpcEnd;
 					queueMicrotask(() => {
@@ -167,8 +179,7 @@ export function useThreads(shell: Shell | undefined) {
 		currentIdRef.current = null;
 		setThreads([]);
 		setCurrentId(null);
-		setMessages([]);
-		setMessagesThreadId(null);
+		setMsgState({ messages: [], threadId: null });
 		setResendFromUserIndex(null);
 		setConfirmDeleteId(null);
 		setEditingThreadId(null);
@@ -197,10 +208,20 @@ export function useThreads(shell: Shell | undefined) {
 		setConfirmDeleteId,
 		confirmDeleteTimerRef,
 		messages,
-		setMessages,
+		setMessages: (msgs: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+			setMsgState((prev) => ({
+				...prev,
+				messages: typeof msgs === 'function' ? msgs(prev.messages) : msgs,
+			}));
+		},
 		messagesRef,
 		messagesThreadId,
-		setMessagesThreadId,
+		setMessagesThreadId: (id: string | null | ((prev: string | null) => string | null)) => {
+			setMsgState((prev) => ({
+				...prev,
+				threadId: typeof id === 'function' ? id(prev.threadId) : id,
+			}));
+		},
 		resendFromUserIndex,
 		setResendFromUserIndex,
 		resendIdxRef,

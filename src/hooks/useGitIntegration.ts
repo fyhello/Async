@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, startTransition } from 'react';
 import type { GitPathStatusMap } from '../WorkspaceExplorer';
 
 type Shell = NonNullable<Window['asyncShell']>;
@@ -41,45 +41,55 @@ export function useGitIntegration(shell: Shell | undefined, workspace: string | 
 			return;
 		}
 		const r = (await shell.invoke('git:fullStatus')) as FullStatusOk | FullStatusFail;
+		// 用 startTransition 标记为非紧急更新：React 可在渲染期间让出主线程给鼠标/键盘事件，
+		// 防止 git 状态批量 setState 触发的重渲染阻塞窗口拖动和其他 UI 交互。
 		if (r.ok) {
-			setGitStatusOk(true);
-			setGitBranch(r.branch || 'master');
-			setGitLines(r.lines);
-			setGitPathStatus(r.pathStatus ?? {});
-			setGitChangedPaths(r.changedPaths ?? []);
-			setGitBranchList(Array.isArray(r.branches) ? r.branches : []);
-			setGitBranchListCurrent(typeof r.current === 'string' ? r.current : '');
-			
 			const changedPaths = r.changedPaths ?? [];
+			startTransition(() => {
+				setGitStatusOk(true);
+				setGitBranch(r.branch || 'master');
+				setGitLines(r.lines);
+				setGitPathStatus(r.pathStatus ?? {});
+				setGitChangedPaths(changedPaths);
+				setGitBranchList(Array.isArray(r.branches) ? r.branches : []);
+				setGitBranchListCurrent(typeof r.current === 'string' ? r.current : '');
+				setTreeEpoch((n) => n + 1);
+			});
 			if (changedPaths.length > 0) {
-				setDiffLoading(true);
+				startTransition(() => setDiffLoading(true));
 				try {
 					const diffR = (await shell.invoke('git:diffPreviews', changedPaths)) as
 						| { ok: true; previews: Record<string, DiffPreview> }
 						| { ok: false };
-					if (diffR.ok) {
-						setDiffPreviews(diffR.previews);
-					}
+					startTransition(() => {
+						if (diffR.ok) {
+							setDiffPreviews(diffR.previews);
+						}
+						setDiffLoading(false);
+					});
 				} catch (e) {
 					console.error('[Git] Failed to load diff previews:', e);
-				} finally {
-					setDiffLoading(false);
+					startTransition(() => setDiffLoading(false));
 				}
 			} else {
-				setDiffPreviews({});
-				setDiffLoading(false);
+				startTransition(() => {
+					setDiffPreviews({});
+					setDiffLoading(false);
+				});
 			}
 		} else {
-			setGitStatusOk(false);
-			setGitBranch('—');
-			setGitLines([r.error ?? 'Failed to load changes']);
-			setGitPathStatus({});
-			setGitChangedPaths([]);
-			setGitBranchList([]);
-			setGitBranchListCurrent('');
-			setDiffPreviews({});
+			startTransition(() => {
+				setGitStatusOk(false);
+				setGitBranch('—');
+				setGitLines([r.error ?? 'Failed to load changes']);
+				setGitPathStatus({});
+				setGitChangedPaths([]);
+				setGitBranchList([]);
+				setGitBranchListCurrent('');
+				setDiffPreviews({});
+				setTreeEpoch((n) => n + 1);
+			});
 		}
-		setTreeEpoch((n) => n + 1);
 	}, [shell]);
 
 	const onGitBranchListFresh = useCallback((b: string[], c: string) => {
