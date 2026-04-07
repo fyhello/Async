@@ -106,6 +106,7 @@ type Props = {
 	revertedPaths?: ReadonlySet<string>;
 	revertedChangeKeys?: ReadonlySet<string>;
 	allowAgentFileActions?: boolean;
+	skipPlanTodo?: boolean;
 };
 
 export const ChatMarkdown = memo(function ChatMarkdown({
@@ -123,6 +124,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 	revertedPaths,
 	revertedChangeKeys,
 	allowAgentFileActions = false,
+	skipPlanTodo = false,
 }: Props) {
 	const { t } = useI18n();
 
@@ -398,6 +400,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 							</p>
 						);
 					case 'plan_todo':
+						if (skipPlanTodo) return null;
 						return (
 							<div key={i} className="ref-plan-review-todos">
 								<div className="ref-plan-review-todos-head">

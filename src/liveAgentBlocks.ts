@@ -407,6 +407,36 @@ export function getActiveStreamingToolPreviewFromBlocks(blocks: LiveAgentBlock[]
 	return null;
 }
 
+/**
+ * Extract the latest TodoWrite todos from live agent blocks.
+ * Scans all tool blocks, returns todos from the last TodoWrite call.
+ */
+export function extractTodosFromLiveBlocks(
+	blocks: LiveAgentBlock[]
+): Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }> | null {
+	let lastTodos: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }> | null = null;
+	for (const b of blocks) {
+		if (b.type === 'tool' && b.name === 'TodoWrite') {
+			let parsedArgs: Record<string, unknown> = {};
+			try {
+				parsedArgs = JSON.parse(b.argsJson || b.partialJson || '{}');
+			} catch { /* ignore */ }
+			const todosRaw = Array.isArray(parsedArgs.todos) ? parsedArgs.todos : [];
+			if (todosRaw.length > 0) {
+				lastTodos = todosRaw.map((item: Record<string, unknown>, idx: number) => ({
+					id: `live-todo-${idx}`,
+					content: String(item.content ?? ''),
+					status: (['pending', 'in_progress', 'completed'].includes(String(item.status))
+						? String(item.status)
+						: 'pending') as 'pending' | 'in_progress' | 'completed',
+					activeForm: typeof item.activeForm === 'string' ? item.activeForm : undefined,
+				}));
+			}
+		}
+	}
+	return lastTodos;
+}
+
 /** 块列表 → 与 ChatMarkdown 一致的 AssistantSegment[]（不经由整段 content 解析） */
 export function liveBlocksToAssistantSegments(blocks: LiveAgentBlock[], t: TFunction): AssistantSegment[] {
 	const out: AssistantSegment[] = [];

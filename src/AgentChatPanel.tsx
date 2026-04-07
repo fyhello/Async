@@ -21,13 +21,13 @@ import { AgentMistakeLimitDialog, type MistakeLimitPayload } from './AgentMistak
 import { PlanReviewPanel } from './PlanReviewPanel';
 import { ComposerThoughtBlock } from './ComposerThoughtBlock';
 import { UserMessageRich } from './UserMessageRich';
-import { assistantMessageUsesAgentToolProtocol, type FileChangeSummary } from './agentChatSegments';
+import { assistantMessageUsesAgentToolProtocol, extractLastTodosFromContent, type FileChangeSummary } from './agentChatSegments';
 import { userMessageToSegments, type ComposerSegment } from './composerSegments';
 import type { WizardPending } from './hooks/useWizardPending';
 import type { TFunction } from './i18n';
 import { isChatAssistantErrorLine } from './i18n';
 import { type AgentPendingPatch, type TurnTokenUsage } from './ipcTypes';
-import { type LiveAgentBlocksState } from './liveAgentBlocks';
+import { extractTodosFromLiveBlocks, type LiveAgentBlocksState } from './liveAgentBlocks';
 import { IconArrowDown, IconChevron, IconDoc } from './icons';
 import { type ParsedPlan, type PlanQuestion } from './planParser';
 import { type ChatMessage } from './threadTypes';
@@ -399,6 +399,49 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 			return (
 				<div key={`a-${convoKey}-${i}`} className="ref-msg-slot ref-msg-slot--assistant">
 					{thoughtBlock && !thoughtAfterBody ? thoughtBlock : null}
+					{(() => {
+						// Extract todos: live blocks for streaming, content parsing for history
+						const todos = (isLast && agentOrPlanStreaming && liveAssistantBlocks)
+							? extractTodosFromLiveBlocks(liveAssistantBlocks.blocks)
+							: (typeof m.content === 'string' ? extractLastTodosFromContent(m.content) : null);
+						if (!todos || todos.length === 0) return null;
+						const doneCount = todos.filter(td => td.status === 'completed').length;
+						return (
+							<div className="ref-plan-review-todos ref-agent-todo-panel">
+								<div className="ref-plan-review-todos-head">
+									<span>{t('plan.review.todo', { done: doneCount, total: todos.length })}</span>
+								</div>
+								<div className="ref-plan-review-todos-list">
+									{todos.map((todo) => {
+										const done = todo.status === 'completed';
+										const active = todo.status === 'in_progress';
+										return (
+											<div key={todo.id} className={`ref-plan-todo ${done ? 'is-done' : ''} ${active ? 'is-active' : ''}`}>
+												{active ? (
+													<span className="ref-plan-todo-spinner" aria-hidden />
+												) : (
+													<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+														<rect
+															x="1" y="1" width="14" height="14" rx="3"
+															stroke={done ? '#e8a848' : '#555'}
+															strokeWidth="1.5"
+															fill={done ? '#e8a848' : 'none'}
+														/>
+														{done ? (
+															<path d="M4.5 8l2.5 2.5 4.5-5" stroke="#1a1a1a" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+														) : null}
+													</svg>
+												)}
+												<span className="ref-plan-todo-text">
+													{active && todo.activeForm ? todo.activeForm : todo.content}
+												</span>
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						);
+					})()}
 					<div className="ref-msg-assistant-body">
 						{pendingEmptyAssistant ? (
 							<span className="ref-bubble-pending" aria-hidden>
@@ -432,6 +475,7 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 								allowAgentFileActions={
 									composerMode === 'agent' && !awaitingReply && i === lastAssistantMessageIndex
 								}
+								skipPlanTodo
 							/>
 						)}
 					</div>

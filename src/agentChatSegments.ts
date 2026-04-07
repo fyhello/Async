@@ -1728,6 +1728,38 @@ function groupActivities(segs: AssistantSegment[]): AssistantSegment[] {
 
 // ─── Utility exports ────────────────────────────────────────────────────
 
+/**
+ * Extract the last TodoWrite todos from raw assistant message content.
+ * Used by AgentChatPanel to render todos outside ChatMarkdown.
+ */
+export function extractLastTodosFromContent(
+	content: string
+): Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }> | null {
+	// Find all TodoWrite tool_call markers using regex
+	const pattern = /<tool_call\s+tool="TodoWrite"[^>]*>([\s\S]*?)<\/tool_call>/g;
+	let lastMatch: string | null = null;
+	let m: RegExpExecArray | null;
+	while ((m = pattern.exec(content)) !== null) {
+		lastMatch = m[1];
+	}
+	if (!lastMatch) return null;
+	try {
+		const args = JSON.parse(lastMatch);
+		const todosRaw = Array.isArray(args.todos) ? args.todos : [];
+		if (todosRaw.length === 0) return null;
+		return todosRaw.map((t: Record<string, unknown>, idx: number) => ({
+			id: `ext-todo-${idx}`,
+			content: String(t.content ?? ''),
+			status: (['pending', 'in_progress', 'completed'].includes(String(t.status))
+				? String(t.status)
+				: 'pending') as 'pending' | 'in_progress' | 'completed',
+			activeForm: typeof t.activeForm === 'string' ? t.activeForm : undefined,
+		}));
+	} catch {
+		return null;
+	}
+}
+
 export function extractDiffDisplayPath(diff: string): string {
 	const m = diff.match(/^diff --git a\/(.+?) b\/(.+?)$/m);
 	if (m) return m[2] ?? m[1] ?? 'file';

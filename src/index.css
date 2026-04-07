@@ -13359,6 +13359,10 @@ select.ref-settings-native-select:focus {
 	overflow: hidden;
 }
 
+.ref-agent-todo-panel {
+	margin-bottom: 4px;
+}
+
 .ref-plan-review-todos-head {
 	display: flex;
 	align-items: center;
