@@ -1,15 +1,18 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, type MutableRefObject } from 'react';
 import type { AgentChatPanelProps } from '../AgentChatPanel';
 
 type OpenAgentConversationFile = AgentChatPanelProps['onOpenAgentConversationFile'];
 
 export type UseAgentChatPanelPropsParams = Omit<
 	AgentChatPanelProps,
-	'layout' | 'onOpenWorkspaceFile' | 'onRunCommand' | 'onOpenAgentConversationFile'
+	'layout' | 'onOpenWorkspaceFile' | 'onRunCommand' | 'onOpenAgentConversationFile' | 'workspaceFileList'
 > & {
 	shell: Window['asyncShell'] | undefined;
 	onExplorerOpenFile: (rel: string) => void | Promise<void>;
 	onAgentConversationOpenFile: AgentChatPanelProps['onOpenAgentConversationFile'];
+	workspaceFileListRef: MutableRefObject<string[]>;
+	/** 与 ref 同步递增，使 stable 分组在按需加载全量路径后重建 */
+	workspaceFileListVersion: number;
 };
 
 export function useAgentChatPanelProps({
@@ -141,7 +144,7 @@ export function useAgentChatPanelProps({
 		t: rest.t,
 		workspace: rest.workspace,
 		workspaceBasename: rest.workspaceBasename,
-		workspaceFileList: rest.workspaceFileList,
+		workspaceFileList: rest.workspaceFileListRef.current,
 		dismissedFiles: rest.dismissedFiles,
 		revertedFiles: rest.revertedFiles,
 		revertedChangeKeys: rest.revertedChangeKeys,
@@ -153,7 +156,8 @@ export function useAgentChatPanelProps({
 		firstTokenAtRef: rest.firstTokenAtRef,
 		thoughtSecondsByThread: rest.thoughtSecondsByThread,
 	}), [
-		rest.t, rest.workspace, rest.workspaceBasename, rest.workspaceFileList,
+		rest.t, rest.workspace, rest.workspaceBasename, rest.workspaceFileListVersion,
+		rest.workspaceFileListRef,
 		rest.dismissedFiles,
 		rest.revertedFiles, rest.revertedChangeKeys,
 		rest.messagesViewportRef, rest.messagesTrackRef, rest.onMessagesScroll,

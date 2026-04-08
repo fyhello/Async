@@ -2,6 +2,7 @@ import {
 	Fragment,
 	memo,
 	useCallback,
+	useDeferredValue,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
@@ -14,6 +15,7 @@ import {
 	type SetStateAction,
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import type { VirtualItem, Virtualizer } from '@tanstack/virtual-core';
 import { ChatMarkdown } from './ChatMarkdown';
 import { AgentReviewPanel } from './AgentReviewPanel';
 import { AgentFileChangesPanel } from './AgentFileChanges';
@@ -185,6 +187,7 @@ const AgentMessagesVirtualizedTrack = memo(function AgentMessagesVirtualizedTrac
 }) {
 	/** 条数不多时 overscan 过大等于整表挂载（如 count=20, overscan=12 → 常渲染全部行） */
 	const overscan = count <= 24 ? 3 : count <= 60 ? 5 : 10;
+	/** virtual-core 运行时支持该选项，当前 @tanstack/react-virtual 的 PartialKeys 类型未收录 */
 	const virtualizer = useVirtualizer({
 		count,
 		getScrollElement: () => viewportRef.current,
@@ -196,13 +199,18 @@ const AgentMessagesVirtualizedTrack = memo(function AgentMessagesVirtualizedTrac
 		 * 动态测高导致上方项尺寸修正时，保持当前视口锚点不被往回拽到中段。
 		 * 这对“从会话中间继续滚动”“返回旧工作区后继续浏览”两类场景最关键。
 		 */
-		shouldAdjustScrollPositionOnItemSizeChange: (item, delta, instance) => {
+		shouldAdjustScrollPositionOnItemSizeChange: (
+			item: VirtualItem,
+			delta: number,
+			instance: Virtualizer<HTMLDivElement, Element>
+		) => {
 			if (Math.abs(delta) < 1) {
 				return false;
 			}
-			return item.start < instance.scrollOffset;
+			const off = instance.scrollOffset;
+			return off != null && item.start < off;
 		},
-	});
+	} as Parameters<typeof useVirtualizer<HTMLDivElement, Element>>[0]);
 
 	useEffect(() => {
 		for (const index of [...heightCache.keys()]) {
@@ -353,7 +361,11 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 		console.log(`[perf] AgentChatPanel render: thread=${messagesThreadId}, messages=${displayMessages.length}, hasConv=${hasConversation}`);
 	}
 	const { gitStatusOk } = useAppShellGitMeta();
-	const { gitChangedPaths, diffPreviews } = useAppShellGitFiles();
+	const { gitChangedPaths: _gitChangedPaths, diffPreviews: _diffPreviews } = useAppShellGitFiles();
+	// useDeferredValue：git 状态/diff 批量更新时，React 优先处理用户输入（打字、拖窗），
+	// 推迟 agentFileChanges 重算，避免切换工作区后的卡顿。
+	const gitChangedPaths = useDeferredValue(_gitChangedPaths);
+	const diffPreviews = useDeferredValue(_diffPreviews);
 	const segmentCacheRef = useRef<{
 		content: string;
 		result: ReturnType<typeof segmentAssistantContentUnified>;

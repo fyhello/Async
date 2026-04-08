@@ -3,9 +3,9 @@ import {
 	buildStaticAtMenuItems,
 	filterAtMenuItems,
 	getAtMentionRange,
-	workspacePathsToMenuItems,
 	type AtMenuItem,
 } from './composerAtMention';
+import type { WorkspaceFileSearchItem } from './hooks/useWorkspaceManager';
 import { newSegmentId, type ComposerSegment } from './composerSegments';
 import { snapshotDomRect, type CaretRectSnapshot } from './caretRectSnapshot';
 import {
@@ -32,7 +32,8 @@ export function useComposerAtMention(
 		gitChangedPaths: string[];
 		currentThreadTitle: string;
 		workspaceOpen: boolean;
-		workspaceFiles: string[];
+		/** 按需搜索工作区文件（IPC，主进程侧过滤） */
+		searchFiles: (query: string, gitChangedPaths: string[], limit?: number) => Promise<WorkspaceFileSearchItem[]>;
 		onFileChipPreview: (relPath: string) => void;
 	}
 ) {
@@ -53,11 +54,41 @@ export function useComposerAtMention(
 		[opts.currentThreadTitle, opts.workspaceOpen]
 	);
 
-	const fileItems = useMemo(
-		() =>
-			workspacePathsToMenuItems(opts.workspaceFiles, atQuery, opts.gitChangedPaths, 60),
-		[opts.workspaceFiles, atQuery, opts.gitChangedPaths]
-	);
+	// ── 文件搜索（按需 IPC，不依赖预加载的全量文件列表）──────────────────────
+	const [fileItems, setFileItems] = useState<AtMenuItem[]>([]);
+	const searchSeqRef = useRef(0);
+
+	useEffect(() => {
+		if (!atOpen) {
+			setFileItems([]);
+			return;
+		}
+		const seq = ++searchSeqRef.current;
+		// 有查询词时 debounce 80ms，无查询词时立即发起（首次打开菜单需要即时反馈）
+		const delay = atQuery ? 80 : 0;
+		const timer = window.setTimeout(() => {
+			void (async () => {
+				try {
+					const items = await opts.searchFiles(atQuery, opts.gitChangedPaths, 60);
+					if (seq !== searchSeqRef.current) return;
+					setFileItems(
+						items.map((it) => ({
+							id: `ws:${it.path}`,
+							label: it.label,
+							subtitle: it.description,
+							insertText: `@${it.path}`,
+							icon: 'file' as const,
+						}))
+					);
+				} catch {
+					/* ignore */
+				}
+			})();
+		}, delay);
+		return () => {
+			window.clearTimeout(timer);
+		};
+	}, [atOpen, atQuery, opts.searchFiles, opts.gitChangedPaths]);
 
 	const filteredStatic = useMemo(
 		() => filterAtMenuItems(staticItems, atQuery),

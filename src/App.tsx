@@ -269,7 +269,10 @@ export default function App({ appSurface }: { appSurface?: LayoutMode } = {}) {
 	const {
 		workspace,
 		setWorkspace,
-		workspaceFileList,
+		workspaceFileListRef: _wfListRef,
+		workspaceFileListVersion: _workspaceFileListVersion,
+		ensureWorkspaceFileListLoaded: _ensureWorkspaceFileListLoaded,
+		searchFiles: _searchFiles,
 		homeRecents,
 		setHomeRecents,
 		folderRecents,
@@ -280,9 +283,7 @@ export default function App({ appSurface }: { appSurface?: LayoutMode } = {}) {
 		setHiddenAgentWorkspacePaths,
 		collapsedAgentWorkspacePaths,
 		setCollapsedAgentWorkspacePaths,
-	} = useWorkspaceManager(shell, {
-		deferWorkspaceFileList: layoutPinnedBySurface && appSurface === 'agent',
-	});
+	} = useWorkspaceManager(shell);
 
 	const {
 		modelProviders,
@@ -364,7 +365,10 @@ export default function App({ appSurface }: { appSurface?: LayoutMode } = {}) {
 		() => ({
 			workspace,
 			setWorkspace,
-			workspaceFileList,
+			workspaceFileListRef: _wfListRef,
+			workspaceFileListVersion: _workspaceFileListVersion,
+			ensureWorkspaceFileListLoaded: _ensureWorkspaceFileListLoaded,
+			searchFiles: _searchFiles,
 			homeRecents,
 			setHomeRecents,
 			folderRecents,
@@ -379,7 +383,10 @@ export default function App({ appSurface }: { appSurface?: LayoutMode } = {}) {
 		[
 			workspace,
 			setWorkspace,
-			workspaceFileList,
+			_wfListRef,
+			_workspaceFileListVersion,
+			_ensureWorkspaceFileListLoaded,
+			_searchFiles,
 			homeRecents,
 			setHomeRecents,
 			folderRecents,
@@ -501,7 +508,10 @@ function AppMainWorkspaceInner() {
 	const {
 		workspace,
 		setWorkspace,
-		workspaceFileList,
+		workspaceFileListRef,
+		workspaceFileListVersion,
+		ensureWorkspaceFileListLoaded,
+		searchFiles,
 		homeRecents,
 		setHomeRecents,
 		folderRecents,
@@ -513,9 +523,6 @@ function AppMainWorkspaceInner() {
 		collapsedAgentWorkspacePaths,
 		setCollapsedAgentWorkspacePaths,
 	} = useAppShellWorkspace();
-
-	const workspaceFileListRef = useRef(workspaceFileList);
-	workspaceFileListRef.current = workspaceFileList;
 
 	const { refreshGit, setGitActionError, setGitBranchPickerOpen } = useAppShellGitActions();
 	const { gitStatusOk } = useAppShellGitMeta();
@@ -762,7 +769,7 @@ function AppMainWorkspaceInner() {
 		refreshThreads,
 		defaultModel,
 		composerMode,
-		workspaceFileList,
+		ensureWorkspaceFileListLoaded,
 		resendFromUserIndex,
 		setResendFromUserIndex,
 		setInlineResendSegments,
@@ -875,6 +882,13 @@ function AppMainWorkspaceInner() {
 	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
 	const [quickOpenOpen, setQuickOpenOpen] = useState(false);
 	const [quickOpenSeed, setQuickOpenSeed] = useState('');
+
+	useEffect(() => {
+		if (!quickOpenOpen || !workspace) {
+			return;
+		}
+		void ensureWorkspaceFileListLoaded();
+	}, [quickOpenOpen, workspace, ensureWorkspaceFileListLoaded]);
 	const [, setSidebarSearchDraft] = useState('');
 	const editorTerminalCreateLockRef = useRef(false);
 	const terminalMenuRef = useRef<HTMLDivElement>(null);
@@ -1159,41 +1173,35 @@ function AppMainWorkspaceInner() {
 
 	const hasConversation = messages.length > 0 || !!streaming;
 	const normalizedEditorSidebarSearchQuery = editorSidebarSearchQuery.trim().toLowerCase();
-	const editorSidebarSearchResults = useMemo(() => {
+	const [editorSidebarSearchResults, setEditorSidebarSearchResults] = useState<
+		{ rel: string; fileName: string; dir: string; fileIndex: number; pathIndex: number }[]
+	>([]);
+	useEffect(() => {
 		if (!normalizedEditorSidebarSearchQuery) {
-			return [];
+			setEditorSidebarSearchResults([]);
+			return;
 		}
-		return workspaceFileList
-			.map((rel) => {
-				const normalizedRel = rel.replace(/\\/g, '/');
-				const fileName = normalizedRel.split('/').pop() ?? normalizedRel;
-				const lowerRel = normalizedRel.toLowerCase();
-				const lowerFileName = fileName.toLowerCase();
-				const fileIndex = lowerFileName.indexOf(normalizedEditorSidebarSearchQuery);
-				const pathIndex = lowerRel.indexOf(normalizedEditorSidebarSearchQuery);
-				if (fileIndex < 0 && pathIndex < 0) {
-					return null;
-				}
-				return {
-					rel: normalizedRel,
-					fileName,
-					dir:
-						normalizedRel.includes('/') ? normalizedRel.slice(0, normalizedRel.lastIndexOf('/')) : '',
-					fileIndex,
-					pathIndex,
-				};
-			})
-			.filter((item): item is NonNullable<typeof item> => item !== null)
-			.sort((a, b) => {
-				const aScore = (a.fileIndex === -1 ? 10_000 : a.fileIndex) + (a.pathIndex === -1 ? 1_000 : a.pathIndex);
-				const bScore = (b.fileIndex === -1 ? 10_000 : b.fileIndex) + (b.pathIndex === -1 ? 1_000 : b.pathIndex);
-				if (aScore !== bScore) {
-					return aScore - bScore;
-				}
-				return a.rel.localeCompare(b.rel);
-			})
-			.slice(0, 120);
-	}, [workspaceFileList, normalizedEditorSidebarSearchQuery]);
+		let cancelled = false;
+		const timer = window.setTimeout(() => {
+			void (async () => {
+				const items = await searchFiles(normalizedEditorSidebarSearchQuery, [], 120);
+				if (cancelled) return;
+				setEditorSidebarSearchResults(
+					items.map((it) => ({
+						rel: it.path,
+						fileName: it.label,
+						dir: it.description,
+						fileIndex: 0,
+						pathIndex: 0,
+					}))
+				);
+			})();
+		}, 120);
+		return () => {
+			cancelled = true;
+			window.clearTimeout(timer);
+		};
+	}, [normalizedEditorSidebarSearchQuery, searchFiles]);
 	const editorSidebarSelectedRel = filePath.trim().replace(/\\/g, '/');
 	const editorSidebarWorkspaceLabel = workspace ? workspaceBasename.toLocaleUpperCase() : t('app.noWorkspace');
 
@@ -4122,7 +4130,7 @@ function AppMainWorkspaceInner() {
 		gitChangedPaths,
 		currentThreadTitle,
 		workspaceOpen: !!workspace,
-		workspaceFiles: workspaceFileList,
+		searchFiles,
 		onFileChipPreview: onAtMentionFileChipPreview,
 	});
 	const slashCommand = useComposerSlashCommand(getComposerSegmentsSetter, composerRichSurface, {
@@ -4241,6 +4249,20 @@ function AppMainWorkspaceInner() {
 
 	const displayMessagesRef = useRef(displayMessages);
 	displayMessagesRef.current = displayMessages;
+
+	/** 聊天区出现带 @ 的用户消息时再拉全量路径，供历史气泡解析文件芯片 */
+	useEffect(() => {
+		if (!workspace || !shell) {
+			return;
+		}
+		const needsPaths = displayMessages.some(
+			(m) => m.role === 'user' && /[@\uFF03]/.test(m.content)
+		);
+		if (!needsPaths) {
+			return;
+		}
+		void ensureWorkspaceFileListLoaded();
+	}, [workspace, shell, displayMessages, ensureWorkspaceFileListLoaded]);
 
 	/**
 	 * 从 localStorage 恢复「已保留/已撤销全部」或逐文件忽略，绑定当前线程最后一条助手正文。
@@ -4866,13 +4888,19 @@ function AppMainWorkspaceInner() {
 		]
 	);
 
-	/** workspaceFileList 引用常随索引刷新而变；勿让其拖垮 composerGroup（否则与 stable 同时失效） */
-	const onStartInlineResend = useCallback((userMessageIndex: number, content: string) => {
-		setPlanQuestion(null);
-		setPlanQuestionRequestId(null);
-		setResendFromUserIndex(userMessageIndex);
-		setInlineResendSegments(userMessageToSegments(content, workspaceFileListRef.current));
-	}, []);
+	/** 内联编辑历史用户消息：按需拉全量路径后再解析 @ 引用 */
+	const onStartInlineResend = useCallback(
+		(userMessageIndex: number, content: string) => {
+			setPlanQuestion(null);
+			setPlanQuestionRequestId(null);
+			setResendFromUserIndex(userMessageIndex);
+			void (async () => {
+				const paths = await ensureWorkspaceFileListLoaded();
+				setInlineResendSegments(userMessageToSegments(content, paths));
+			})();
+		},
+		[ensureWorkspaceFileListLoaded, setPlanQuestion, setPlanQuestionRequestId]
+	);
 
 	const plusMenuAnchorRefForDropdown =
 		plusMenuAnchorSlot === 'hero'
@@ -5159,7 +5187,8 @@ function AppMainWorkspaceInner() {
 		liveAssistantBlocks,
 		workspace,
 		workspaceBasename,
-		workspaceFileList,
+		workspaceFileListRef,
+		workspaceFileListVersion,
 		revertedFiles,
 		revertedChangeKeys,
 		resendFromUserIndex,
@@ -5706,7 +5735,7 @@ function AppMainWorkspaceInner() {
 				shell={shell}
 				workspace={workspace}
 				homePath={homePath}
-				workspaceFileList={workspaceFileList}
+				workspaceFileList={workspaceFileListRef.current}
 				homeRecents={homeRecents}
 				filePath={filePath}
 				indexingSettingsSymbolIndexEnabled={indexingSettings.symbolIndexEnabled}

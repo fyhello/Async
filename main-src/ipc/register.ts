@@ -17,6 +17,7 @@ import {
 } from '../workspace.js';
 import {
 	ensureWorkspaceFileIndex,
+	searchWorkspaceFiles,
 	acquireWorkspaceFileIndexRef,
 	releaseWorkspaceFileIndexRef,
 	getWorkspaceFileIndexLiveStatsForRoot,
@@ -675,7 +676,6 @@ export function registerIpc(): void {
 			acquireWorkspaceFileIndexRef(resolvedPick);
 		}
 		rememberWorkspace(resolvedPick);
-		void ensureWorkspaceFileIndex(resolvedPick).catch(() => {});
 		return { ok: true as const, path: resolvedPick };
 	});
 
@@ -697,7 +697,6 @@ export function registerIpc(): void {
 				acquireWorkspaceFileIndexRef(resolved);
 			}
 			rememberWorkspace(resolved);
-			void ensureWorkspaceFileIndex(resolved).catch(() => {});
 			console.log(`[perf][main] workspace:openPath done in ${(performance.now() - t0).toFixed(1)}ms`);
 			return { ok: true as const, path: resolved };
 		} catch (e) {
@@ -929,6 +928,27 @@ export function registerIpc(): void {
 			return { ok: false as const, error: 'read-failed' as const };
 		}
 	});
+
+	ipcMain.handle(
+		'workspace:searchFiles',
+		async (event, opts: { query?: string; gitChangedPaths?: string[]; limit?: number } | undefined) => {
+			const root = senderWorkspaceRoot(event);
+			if (!root) {
+				return { ok: false as const, items: [] };
+			}
+			try {
+				const items = await searchWorkspaceFiles(
+					root,
+					opts?.query ?? '',
+					opts?.gitChangedPaths ?? [],
+					opts?.limit ?? 60
+				);
+				return { ok: true as const, items };
+			} catch {
+				return { ok: false as const, items: [] };
+			}
+		}
+	);
 
 	const COMPOSER_ATTACH_MAX_BYTES = 8 * 1024 * 1024;
 

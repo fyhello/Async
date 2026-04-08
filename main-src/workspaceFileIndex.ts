@@ -438,6 +438,83 @@ function attachWatcher(b: FileIndexBucket): void {
 	b.watcher.on('unlinkDir', applyUnlinkDir);
 }
 
+// ── 按需搜索（主进程侧过滤，渲染进程不再持有全量文件列表） ───────────────
+
+export type FileSearchItem = {
+	/** 相对路径（正斜杠） */
+	path: string;
+	/** 文件名 */
+	label: string;
+	/** 目录部分 */
+	description: string;
+};
+
+/**
+ * 在已建好的文件索引上执行过滤搜索，返回评分后的 top-N 结果。
+ * 如果索引未就绪，先 await 构建完成。
+ * @param gitChangedPaths  渲染进程传来的 git 变更路径列表（用于提权排序）
+ */
+export async function searchWorkspaceFiles(
+	rootAbs: string,
+	query: string,
+	gitChangedPaths: string[],
+	limit = 60
+): Promise<FileSearchItem[]> {
+	const rootNorm = path.normalize(path.resolve(rootAbs));
+	// 确保索引已就绪
+	await ensureWorkspaceFileIndex(rootAbs);
+	const b = buckets.get(rootNorm);
+	if (!b || b.relPathSet.size === 0) {
+		return [];
+	}
+	const gitSet = new Set(gitChangedPaths.map((p) => p.replace(/\\/g, '/')));
+	const q = query.trim().toLowerCase();
+
+	type Scored = { path: string; score: number };
+	const scored: Scored[] = [];
+
+	if (!q) {
+		// 无查询词：git 变更文件优先，其余按字典序
+		for (const p of b.relPathSet) {
+			scored.push({ path: p, score: gitSet.has(p) ? 0 : 2 });
+		}
+		scored.sort((a, c) => {
+			if (a.score !== c.score) return a.score - c.score;
+			return a.path.localeCompare(c.path, undefined, { sensitivity: 'base' });
+		});
+	} else {
+		for (const p of b.relPathSet) {
+			const pl = p.toLowerCase();
+			const base = (p.split('/').pop() || p).toLowerCase();
+			if (!pl.includes(q) && !base.includes(q)) continue;
+			let score = 20;
+			if (base === q) score = 0;
+			else if (base.startsWith(q)) score = 2;
+			else if (base.includes(q)) score = 5;
+			else if (pl.includes(q)) score = 10;
+			if (gitSet.has(p)) score -= 1;
+			scored.push({ path: p, score });
+		}
+		scored.sort((a, c) => {
+			if (a.score !== c.score) return a.score - c.score;
+			const ab = (a.path.split('/').pop() || a.path).toLowerCase();
+			const bb = (c.path.split('/').pop() || c.path).toLowerCase();
+			const cmp = ab.localeCompare(bb);
+			if (cmp !== 0) return cmp;
+			return a.path.localeCompare(c.path);
+		});
+	}
+
+	return scored.slice(0, limit).map(({ path: slash }) => {
+		const idx = slash.lastIndexOf('/');
+		return {
+			path: slash,
+			label: idx >= 0 ? slash.slice(idx + 1) : slash,
+			description: idx >= 0 ? slash.slice(0, idx) : '',
+		};
+	});
+}
+
 export async function ensureWorkspaceFileIndex(rootAbs: string): Promise<string[]> {
 	const rootNorm = path.normalize(path.resolve(rootAbs));
 	const b = getBucket(rootNorm);

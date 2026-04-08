@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { sameStringArray } from '../appDiffUtils';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 
 type Shell = NonNullable<Window['asyncShell']>;
 
@@ -26,22 +25,23 @@ function writeJsonStorage(key: string, value: unknown) {
 	}
 }
 
-export type UseWorkspaceManagerOpts = {
-	/**
-	 * Agent 专用窗口首帧优先对话区：工作区文件列表稍后在空闲时拉取，减轻与首屏 IPC/React 争用。
-	 */
-	deferWorkspaceFileList?: boolean;
+/** workspace:searchFiles 返回的单条结果 */
+export type WorkspaceFileSearchItem = {
+	path: string;
+	label: string;
+	description: string;
 };
 
 /**
- * 管理工作区核心状态：路径、文件列表、最近列表、别名。
- * Action callbacks（applyWorkspacePath 等）由调用方用返回的 setters 自行组合，
- * 避免与 clearWorkspaceConversationState / refreshThreads 产生循环依赖。
+ * 管理工作区核心状态：路径、最近列表、别名。
+ *
+ * ### 文件列表架构（v2 - 按需）
+ * - `@` 提及：`workspace:searchFiles`（主进程在首次搜索时建索引，打开文件夹时不预扫全库）。
+ * - 历史消息里的 `@路径` 解析、快速打开、内联重发等：在需要时调用 `ensureWorkspaceFileListLoaded()`，
+ *   通过 `workspace:listFiles` 拉取一次全量到 `workspaceFileListRef`，并递增 `workspaceFileListVersion` 触发依赖方重渲染。
  */
-export function useWorkspaceManager(shell: Shell | undefined, opts?: UseWorkspaceManagerOpts) {
-	const deferFileList = opts?.deferWorkspaceFileList === true;
+export function useWorkspaceManager(shell: Shell | undefined) {
 	const [workspace, setWorkspace] = useState<string | null>(null);
-	const [workspaceFileList, setWorkspaceFileList] = useState<string[]>([]);
 	const [homeRecents, setHomeRecents] = useState<string[]>([]);
 	/** 文件菜单「打开最近的文件夹」：与是否打开工作区无关 */
 	const [folderRecents, setFolderRecents] = useState<string[]>([]);
@@ -69,50 +69,61 @@ export function useWorkspaceManager(shell: Shell | undefined, opts?: UseWorkspac
 		writeJsonStorage(AGENT_WORKSPACE_COLLAPSED_KEY, collapsedAgentWorkspacePaths);
 	}, [collapsedAgentWorkspacePaths]);
 
-	// ── 文件列表 ──────────────────────────────────────────────────────────────
+	// ── 文件列表（按需拉取）──────────────────────────────────────────────────
+	const workspaceFileListRef = useRef<string[]>([]);
+	const listLoadPromiseRef = useRef<Promise<string[]> | null>(null);
+	const [workspaceFileListVersion, setWorkspaceFileListVersion] = useState(0);
 
 	useEffect(() => {
+		workspaceFileListRef.current = [];
+		listLoadPromiseRef.current = null;
+		setWorkspaceFileListVersion(0);
+	}, [workspace]);
+
+	const ensureWorkspaceFileListLoaded = useCallback(async (): Promise<string[]> => {
 		if (!shell || !workspace) {
-			setWorkspaceFileList([]);
-			return;
+			return [];
 		}
-		let cancelled = false;
-		const loadList = () => {
-			void (async () => {
+		if (workspaceFileListRef.current.length > 0) {
+			return workspaceFileListRef.current;
+		}
+		if (listLoadPromiseRef.current) {
+			return listLoadPromiseRef.current;
+		}
+		const p = (async () => {
+			try {
 				const r = (await shell.invoke('workspace:listFiles')) as
 					| { ok: true; paths: string[] }
 					| { ok: false; error?: string };
-				if (cancelled) return;
-				const next = r.ok && Array.isArray(r.paths) ? r.paths : [];
-				setWorkspaceFileList((prev) => (sameStringArray(prev, next) ? prev : next));
-			})();
-		};
-		if (!deferFileList) {
-			loadList();
-			return () => {
-				cancelled = true;
-			};
-		}
-		if (typeof requestIdleCallback === 'function') {
-			const idleId = requestIdleCallback(
-				() => {
-					if (!cancelled) loadList();
-				},
-				{ timeout: 2500 }
-			);
-			return () => {
-				cancelled = true;
-				cancelIdleCallback(idleId);
-			};
-		}
-		const t = window.setTimeout(() => {
-			if (!cancelled) loadList();
-		}, 0);
-		return () => {
-			cancelled = true;
-			window.clearTimeout(t);
-		};
-	}, [shell, workspace, deferFileList]);
+				const paths = r.ok && Array.isArray(r.paths) ? r.paths : [];
+				workspaceFileListRef.current = paths;
+				setWorkspaceFileListVersion((v) => v + 1);
+				return paths;
+			} finally {
+				listLoadPromiseRef.current = null;
+			}
+		})();
+		listLoadPromiseRef.current = p;
+		return p;
+	}, [shell, workspace]);
+
+	// ── 按需搜索 ─────────────────────────────────────────────────────────────
+
+	const searchFiles = useCallback(
+		async (query: string, gitChangedPaths: string[], limit = 60): Promise<WorkspaceFileSearchItem[]> => {
+			if (!shell || !workspace) return [];
+			try {
+				const r = (await shell.invoke('workspace:searchFiles', { query, gitChangedPaths, limit })) as {
+					ok: boolean;
+					items: WorkspaceFileSearchItem[];
+				};
+				return r.ok ? r.items : [];
+			} catch {
+				return [];
+			}
+		},
+		[shell, workspace]
+	);
 
 	// ── 最近工作区 ────────────────────────────────────────────────────────────
 
@@ -161,7 +172,13 @@ export function useWorkspaceManager(shell: Shell | undefined, opts?: UseWorkspac
 	return {
 		workspace,
 		setWorkspace,
-		workspaceFileList,
+		workspaceFileListRef: workspaceFileListRef as MutableRefObject<string[]>,
+		/** 在 `workspaceFileListRef` 更新后递增，供父组件把快照传给 memo 子树 */
+		workspaceFileListVersion,
+		/** 首次需要全量路径时调用（幂等、并发合并） */
+		ensureWorkspaceFileListLoaded,
+		/** 按需搜索工作区文件（IPC，主进程侧过滤）；用于 @ 提及 */
+		searchFiles,
 		homeRecents,
 		setHomeRecents,
 		folderRecents,
