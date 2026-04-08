@@ -7819,6 +7819,11 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	font: inherit;
 }
 
+/* Shiki 行内 HTML：子 span 自带 style.color，父级不设死前景以免盖掉 */
+.ref-agent-file-preview-line.ref-agent-file-preview-line--shiki {
+	color: unset;
+}
+
 .ref-agent-file-preview-row--del .ref-agent-file-preview-line {
 	color: color-mix(in srgb, var(--void-fg-1) 76%, #fca5a5 24%);
 	opacity: 0.9;
@@ -8975,6 +8980,30 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 .ref-git-diff-line.is-meta {
 	color: var(--void-fg-3);
 	opacity: 0.85;
+}
+
+.ref-git-diff-line--shiki {
+	display: grid;
+	grid-template-columns: 1ch minmax(0, 1fr);
+	gap: 4px;
+	align-items: baseline;
+}
+
+.ref-git-diff-line-prefix {
+	font-weight: 700;
+	user-select: none;
+}
+
+.ref-git-diff-line-code {
+	margin: 0;
+	padding: 0;
+	font: inherit;
+	background: transparent;
+	border: none;
+	min-width: 0;
+	white-space: pre-wrap;
+	word-break: break-all;
+	color: unset;
 }
 
 .ref-git-card-skel,
