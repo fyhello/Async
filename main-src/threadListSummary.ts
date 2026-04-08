@@ -28,6 +28,9 @@ function firstLine(text: string, maxLen: number): string {
 
 const summaryCache = new Map<string, { updatedAt: number; summary: ThreadRowSummary }>();
 
+/** Maximum number of cached thread summaries to prevent unbounded memory growth. */
+const SUMMARY_CACHE_MAX = 500;
+
 // diff 扫描只看消息末尾 N 个字符：最近的 diff 在末尾，扫全文对长消息代价极高。
 const DIFF_SCAN_MAX_CHARS = 30_000;
 // subtitle 只取消息开头 N 个字符即可提取首行。
@@ -111,7 +114,24 @@ export function summarizeThreadForSidebar(thread: {
 	}
 	const summary = computeThreadRowSummary(thread);
 	summaryCache.set(thread.id, { updatedAt: thread.updatedAt, summary });
+	// Evict oldest entries when cache exceeds max size (simple FIFO via Map insertion order).
+	if (summaryCache.size > SUMMARY_CACHE_MAX) {
+		const first = summaryCache.keys().next().value;
+		if (first !== undefined) summaryCache.delete(first);
+	}
 	return summary;
+}
+
+/**
+ * Remove cached summaries for thread IDs that no longer exist.
+ * Call after listing threads to keep the cache consistent with storage.
+ */
+export function pruneSummaryCache(activeIds: ReadonlySet<string>): void {
+	for (const id of summaryCache.keys()) {
+		if (!activeIds.has(id)) {
+			summaryCache.delete(id);
+		}
+	}
 }
 
 export function isTimestampToday(ts: number, now = Date.now()): boolean {

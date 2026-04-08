@@ -13370,6 +13370,8 @@ select.ref-settings-native-select:focus {
 	border-bottom-right-radius: 18px;
 	background: var(--void-bg-3);
 	overflow: hidden;
+	max-width: 100%;
+	box-sizing: border-box;
 }
 
 /* ── Seamless bubble + TODO panel ── */
@@ -13418,9 +13420,11 @@ select.ref-settings-native-select:focus {
 	background: transparent;
 	border: none;
 	color: var(--void-fg-2);
+	font: inherit;
 	font-size: 12px;
 	font-weight: 600;
 	cursor: pointer;
+	user-select: none;
 }
 
 .ref-plan-review-todos-head:hover {

@@ -116,58 +116,75 @@ export function useThreads(shell: Shell | undefined) {
 		[shell]
 	);
 
+	/**
+	 * 避免同一线程 ID 的并发 IPC 请求（applyWorkspacePath 直接调用 + effect 间接触发时去重）。
+	 */
+	const loadingIdRef = useRef<string | null>(null);
+
 	const loadMessages = useCallback(
-		async (id: string) => {
+		async (id: string, onLoad?: (msgs: ChatMessage[], threadId: string) => void) => {
 			if (!shell) return;
+			// 去重：如果已经在加载同一线程，跳过
+			if (loadingIdRef.current === id) return;
+			loadingIdRef.current = id;
 			const dev = import.meta.env.DEV;
 			const tIpcStart = dev && typeof performance !== 'undefined' ? performance.now() : 0;
-			const r = (await shell.invoke('threads:messages', id)) as {
-				ok: boolean;
-				messages?: ChatMessage[];
-			};
-			const tIpcEnd = dev && typeof performance !== 'undefined' ? performance.now() : 0;
-			if (dev && tIpcStart) {
-				console.log(`[perf] loadMessages: ipc=${(tIpcEnd - tIpcStart).toFixed(1)}ms`);
-			}
-			if (r.ok && r.messages) {
-				if (currentIdRef.current !== id) {
-					if (dev) {
-						console.log(
-							`[perf] loadMessages: stale ignored (wanted ${id}, currentId=${currentIdRef.current})`
-						);
-					}
-					return;
+			try {
+				const r = (await shell.invoke('threads:messages', id)) as {
+					ok: boolean;
+					messages?: ChatMessage[];
+				};
+				const tIpcEnd = dev && typeof performance !== 'undefined' ? performance.now() : 0;
+				if (dev && tIpcStart) {
+					console.log(`[perf] loadMessages: ipc=${(tIpcEnd - tIpcStart).toFixed(1)}ms`);
 				}
-				if (dev && typeof performance !== 'undefined') {
-					let approxContentChars = 0;
-					for (const m of r.messages) {
-						if (typeof m.content === 'string') {
-							approxContentChars += m.content.length;
-						}
-					}
-					console.log(
-						`[perf] loadMessages: payload messages=${r.messages.length}, approxContentChars=${approxContentChars}`
-					);
-				}
-				// startTransition：消息渲染是非紧急更新，React 可在渲染期间让出主线程给输入事件。
-				// 实测 76KB 内容 4 条消息渲染耗时 117ms，不用 transition 会触发 longtask 阻塞窗口拖动。
-				startTransition(() => {
-					setMsgState({ messages: r.messages!, threadId: id });
-				});
-				if (dev && typeof performance !== 'undefined') {
-					const ipcEnd = tIpcEnd;
-					queueMicrotask(() => {
-						console.log(
-							`[perf] loadMessages: microtask Δ=${(performance.now() - ipcEnd).toFixed(1)}ms after ipc (before paint)`
-						);
-					});
-					requestAnimationFrame(() => {
-						requestAnimationFrame(() => {
+				if (r.ok && r.messages) {
+					if (currentIdRef.current !== id) {
+						if (dev) {
 							console.log(
-								`[perf] loadMessages: toPaint Δ=${(performance.now() - ipcEnd).toFixed(1)}ms after ipc (≈after frame)`
+								`[perf] loadMessages: stale ignored (wanted ${id}, currentId=${currentIdRef.current})`
+							);
+						}
+						return;
+					}
+					if (dev && typeof performance !== 'undefined') {
+						let approxContentChars = 0;
+						for (const m of r.messages) {
+							if (typeof m.content === 'string') {
+								approxContentChars += m.content.length;
+							}
+						}
+						console.log(
+							`[perf] loadMessages: payload messages=${r.messages.length}, approxContentChars=${approxContentChars}`
+						);
+					}
+					// startTransition：消息渲染是非紧急更新，React 可在渲染期间让出主线程给输入事件。
+					// 实测 76KB 内容 4 条消息渲染耗时 117ms，不用 transition 会触发 longtask 阻塞窗口拖动。
+					// onLoad 在同一 transition 内调用，使 fileChanges / planQuestion 等
+					// 状态与 messages 在同一批次渲染，消除 useLayoutEffect 级联的额外 render 轮次。
+					startTransition(() => {
+						setMsgState({ messages: r.messages!, threadId: id });
+						onLoad?.(r.messages!, id);
+					});
+					if (dev && typeof performance !== 'undefined') {
+						const ipcEnd = tIpcEnd;
+						queueMicrotask(() => {
+							console.log(
+								`[perf] loadMessages: microtask Δ=${(performance.now() - ipcEnd).toFixed(1)}ms after ipc (before paint)`
 							);
 						});
-					});
+						requestAnimationFrame(() => {
+							requestAnimationFrame(() => {
+								console.log(
+									`[perf] loadMessages: toPaint Δ=${(performance.now() - ipcEnd).toFixed(1)}ms after ipc (≈after frame)`
+								);
+							});
+						});
+					}
+				}
+			} finally {
+				if (loadingIdRef.current === id) {
+					loadingIdRef.current = null;
 				}
 			}
 		},

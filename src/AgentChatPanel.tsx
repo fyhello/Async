@@ -1,6 +1,8 @@
 import {
 	Fragment,
 	memo,
+	useCallback,
+	useState,
 	type ComponentProps,
 	type Dispatch,
 	type ReactNode,
@@ -268,6 +270,15 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 		console.log(`[perf] AgentChatPanel render: thread=${messagesThreadId}, messages=${displayMessages.length}, hasConv=${hasConversation}`);
 	}
 	const isEditorRail = layout === 'editor-rail';
+	const [collapsedTodos, setCollapsedTodos] = useState<Set<number>>(new Set());
+	const toggleTodoCollapse = useCallback((msgIndex: number) => {
+		setCollapsedTodos(prev => {
+			const next = new Set(prev);
+			if (next.has(msgIndex)) next.delete(msgIndex);
+			else next.add(msgIndex);
+			return next;
+		});
+	}, []);
 	const conversationRenderKey = messagesThreadId ?? 'no-thread';
 	const messageTrackGap = isEditorRail ? 20 : 22;
 	const virtualListEnabled =
@@ -396,41 +407,56 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 						>
 							<UserMessageRich segments={userSegs} onFileClick={onOpenWorkspaceFile} />
 						</button>
-						{hasTodoPanel && (
-							<div className="ref-plan-review-todos ref-agent-todo-panel">
-								<div className="ref-plan-review-todos-head">
-									<span>{t('plan.review.todo', { done: userTodos!.filter(td => td.status === 'completed').length, total: userTodos!.length })}</span>
+						{hasTodoPanel && (() => {
+							const doneCount = userTodos!.filter(td => td.status === 'completed').length;
+							const allDone = doneCount === userTodos!.length;
+							const userToggled = collapsedTodos.has(i);
+							const isCollapsed = userToggled ? !allDone : allDone;
+							return (
+								<div className="ref-plan-review-todos ref-agent-todo-panel">
+									<button
+										type="button"
+										className="ref-plan-review-todos-head"
+										onClick={(e) => { e.stopPropagation(); toggleTodoCollapse(i); }}
+									>
+										<span>{t('plan.review.todo', { done: doneCount, total: userTodos!.length })}</span>
+										<svg className={`ref-plan-review-chev${isCollapsed ? '' : ' is-open'}`} width="16" height="16" viewBox="0 0 16 16" fill="none">
+											<path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+										</svg>
+									</button>
+									{!isCollapsed && (
+										<div className="ref-plan-review-todos-list">
+											{userTodos!.map((todo) => {
+												const done = todo.status === 'completed';
+												const active = todo.status === 'in_progress';
+												return (
+													<div key={todo.id} className={`ref-plan-todo ${done ? 'is-done' : ''} ${active ? 'is-active' : ''}`}>
+														{active ? (
+															<span className="ref-plan-todo-spinner" aria-hidden />
+														) : (
+															<svg className="ref-plan-todo-check" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+																<rect
+																	x="1" y="1" width="14" height="14" rx="3"
+																	stroke="currentColor"
+																	strokeWidth="1.5"
+																	fill={done ? 'currentColor' : 'none'}
+																/>
+																{done ? (
+																	<path d="M4.5 8l2.5 2.5 4.5-5" stroke="var(--void-bg-3, #1a1a1a)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+																) : null}
+															</svg>
+														)}
+														<span className="ref-plan-todo-text">
+															{active && todo.activeForm ? todo.activeForm : todo.content}
+														</span>
+													</div>
+												);
+											})}
+										</div>
+									)}
 								</div>
-								<div className="ref-plan-review-todos-list">
-									{userTodos!.map((todo) => {
-										const done = todo.status === 'completed';
-										const active = todo.status === 'in_progress';
-										return (
-											<div key={todo.id} className={`ref-plan-todo ${done ? 'is-done' : ''} ${active ? 'is-active' : ''}`}>
-												{active ? (
-													<span className="ref-plan-todo-spinner" aria-hidden />
-												) : (
-													<svg className="ref-plan-todo-check" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-														<rect
-															x="1" y="1" width="14" height="14" rx="3"
-															stroke="currentColor"
-															strokeWidth="1.5"
-															fill={done ? 'currentColor' : 'none'}
-														/>
-														{done ? (
-															<path d="M4.5 8l2.5 2.5 4.5-5" stroke="var(--void-bg-3, #1a1a1a)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-														) : null}
-													</svg>
-												)}
-												<span className="ref-plan-todo-text">
-													{active && todo.activeForm ? todo.activeForm : todo.content}
-												</span>
-											</div>
-										);
-									})}
-								</div>
-							</div>
-						)}
+							);
+						})()}
 					</div>
 				);
 				return i === lastUserMessageIndex ? (

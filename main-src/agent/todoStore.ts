@@ -16,8 +16,7 @@ export function getTodos(key: string): TodoItem[] {
 
 export function setTodos(key: string, todos: TodoItem[]): { oldTodos: TodoItem[]; newTodos: TodoItem[] } {
 	const oldTodos = todosByKey.get(key) ?? [];
-	const allDone = todos.length > 0 && todos.every((t) => t.status === 'completed');
-	const newTodos = allDone ? [] : todos;
+	const newTodos = todos;
 	if (newTodos.length === 0) {
 		todosByKey.delete(key);
 	} else {

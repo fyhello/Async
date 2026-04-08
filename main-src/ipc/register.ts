@@ -114,7 +114,7 @@ import {
 	writeWorkspaceAgentProjectSlice,
 	type WorkspaceAgentProjectSlice,
 } from '../workspaceAgentStore.js';
-import { summarizeThreadForSidebar, isTimestampToday } from '../threadListSummary.js';
+import { summarizeThreadForSidebar, isTimestampToday, pruneSummaryCache } from '../threadListSummary.js';
 import { registerTerminalPtyIpc } from '../terminalPty.js';
 
 import {
@@ -1220,6 +1220,8 @@ export function registerIpc(): void {
 			}
 		}
 		console.log(`[perf][main] threads:list total=${(performance.now() - t0).toFixed(1)}ms summarized=${threads.length}`);
+		// Prune cached summaries for threads that no longer exist in this workspace.
+		pruneSummaryCache(new Set(raw.map((t) => t.id)));
 		return { threads, currentId: getCurrentThreadId(scope) };
 	});
 
@@ -2263,9 +2265,9 @@ ipcMain.handle(
 				}
 				const gitTop = probe.topLevel;
 				const tGit0 = dev ? performance.now() : 0;
-				const [porcelain, branch] = await Promise.all([
+				const [porcelain, branchListPack] = await Promise.all([
 					gitService.gitStatusPorcelain(),
-					gitService.gitBranch(),
+					gitService.gitListLocalBranches(),
 				]);
 				const tGit1 = dev ? performance.now() : 0;
 				if (dev) {
@@ -2291,6 +2293,27 @@ ipcMain.handle(
 						changedPaths.push(wsRel);
 					}
 				}
+				const branch = branchListPack.current?.trim() ? branchListPack.current : 'master';
+				const branches = branchListPack.branches;
+				const current = branchListPack.current;
+				let previews: Record<string, gitService.DiffPreview> = {};
+				if (changedPaths.length > 0) {
+					const tDiff0 = dev ? performance.now() : 0;
+					const fullDiffRaw = await gitService.gitDiffHeadUnified(root);
+					const tDiff1 = dev ? performance.now() : 0;
+					previews = await gitService.buildDiffPreviewsMap(
+						changedPaths,
+						fullDiffRaw,
+						root,
+						gitTop,
+						{ maxChars: 4_000 }
+					);
+					if (dev) {
+						console.log(
+							`[perf][git][main] fullStatus diff=${(tDiff1 - tDiff0).toFixed(1)}ms bytes=${fullDiffRaw.length} previewKeys=${Object.keys(previews).length}`
+						);
+					}
+				}
 				if (dev) {
 					const tDone = performance.now();
 					console.log(
@@ -2303,6 +2326,9 @@ ipcMain.handle(
 					lines,
 					pathStatus,
 					changedPaths,
+					branches,
+					current,
+					previews,
 				};
 			} catch (e) {
 				return {
