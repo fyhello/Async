@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { sameStringArray } from '../appDiffUtils';
 
 type Shell = NonNullable<Window['asyncShell']>;
 
@@ -82,7 +83,8 @@ export function useWorkspaceManager(shell: Shell | undefined, opts?: UseWorkspac
 					| { ok: true; paths: string[] }
 					| { ok: false; error?: string };
 				if (cancelled) return;
-				setWorkspaceFileList(r.ok && Array.isArray(r.paths) ? r.paths : []);
+				const next = r.ok && Array.isArray(r.paths) ? r.paths : [];
+				setWorkspaceFileList((prev) => (sameStringArray(prev, next) ? prev : next));
 			})();
 		};
 		if (!deferFileList) {

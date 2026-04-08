@@ -735,7 +735,7 @@ const AgentRightSidebarGitPanel = memo(function AgentRightSidebarGitPanel({
 					commitMsg={commitMsg}
 					setCommitMsg={setCommitMsg}
 					onClose={() => setShowCommitModal(false)}
-					onCommit={(action, includeUnstaged, isDraft) => {
+					onCommit={(action, _includeUnstaged, _isDraft) => {
 						setShowCommitModal(false);
 						if (action === 'commit') {
 							onCommitOnly();

@@ -3083,6 +3083,8 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	max-height: none;
 	/* 缩短对话末尾与底部输入区之间的留白，但仍保留一点呼吸感 */
 	padding-bottom: calc(12px + var(--ref-chat-tail-space));
+	/* 消息高度在 Markdown/虚拟测量后会继续变化，关闭浏览器 scroll anchoring，避免把视口拉回中段。 */
+	overflow-anchor: none;
 	/* Firefox???????????????????????? */
 	scrollbar-color: rgba(58, 58, 66, 0) transparent;
 	transition: scrollbar-color 0.35s var(--void-ease-out-expo);
@@ -3255,9 +3257,14 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	width: 100%;
 }
 
-/* 虚拟行内为绝对定位子树；避免误拦滚动 */
+/* 虚拟行内为绝对定位子树；与 .ref-messages-track 的 flex+align-items:center 一致，否则气泡贴左不居中 */
 .ref-msg-virtual-row {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
 	min-height: 0;
+	width: 100%;
+	box-sizing: border-box;
 }
 
 /* transform 排布下列内 sticky 无效，降级为普通块避免错误粘附 */

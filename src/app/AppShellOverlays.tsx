@@ -3,6 +3,7 @@ import {
 	Suspense,
 	lazy,
 	memo,
+	useCallback,
 	type ComponentProps,
 	type Dispatch,
 	type RefObject,
@@ -25,11 +26,51 @@ import type { StreamingToast } from '../hooks/useStreamingChat';
 import { IconArrowUpRight, IconPencil, IconTrash } from '../icons';
 import type { AgentSidebarWorkspace } from '../AgentLeftSidebar';
 import type { ShellLayoutMode } from './shellLayoutStorage';
+import { useAppShellGitActions, useAppShellGitMeta } from './appShellContexts';
 
 const DrawerPtyTerminal = lazy(() =>
 	import('../DrawerPtyTerminal').then((m) => ({ default: m.DrawerPtyTerminal }))
 );
 const SettingsPage = lazy(() => import('../SettingsPage').then((m) => ({ default: m.SettingsPage })));
+
+/** 分支选择器：内部订阅 Git Meta/Actions，避免父组件因 pathStatus/diff 等大对象更新而带动整层 overlays props 失效 */
+function GitBranchPickerOverlaySection({
+	shell,
+	composerGitBranchAnchorRef,
+	showTransientToast,
+}: {
+	shell: Window['asyncShell'] | undefined;
+	composerGitBranchAnchorRef: RefObject<HTMLElement | null>;
+	showTransientToast: (ok: boolean, text: string, durationMs?: number) => void;
+}) {
+	const {
+		gitBranchPickerOpen,
+		gitStatusOk,
+		gitBranchList,
+		gitBranchListCurrent,
+		gitBranch,
+	} = useAppShellGitMeta();
+	const { refreshGit, onGitBranchListFresh, setGitBranchPickerOpen } = useAppShellGitActions();
+	const handleCloseGitBranchPicker = useCallback(
+		() => setGitBranchPickerOpen(false),
+		[setGitBranchPickerOpen]
+	);
+	return (
+		<GitBranchPickerDropdown
+			open={gitBranchPickerOpen}
+			onClose={handleCloseGitBranchPicker}
+			anchorRef={composerGitBranchAnchorRef}
+			shell={shell ?? null}
+			repoReady={gitStatusOk}
+			branches={gitBranchList}
+			listCurrent={gitBranchListCurrent}
+			onBranchListFresh={onGitBranchListFresh}
+			displayBranch={gitBranch}
+			onAfterGitChange={() => void refreshGit()}
+			onNotify={showTransientToast}
+		/>
+	);
+}
 
 export type AppShellOverlaysProps = {
 	t: TFunction;
@@ -82,15 +123,7 @@ export type AppShellOverlaysProps = {
 	plusMenuAnchorRefForDropdown: RefObject<HTMLElement | null>;
 	composerMode: ComposerMode;
 	setComposerModePersist: (mode: ComposerMode) => void;
-	gitBranchPickerOpen: boolean;
-	handleCloseGitBranchPicker: () => void;
 	composerGitBranchAnchorRef: RefObject<HTMLElement | null>;
-	gitStatusOk: boolean;
-	gitBranchList: string[];
-	gitBranchListCurrent: string;
-	onGitBranchListFresh: (b: string[], c: string) => void;
-	gitBranch: string;
-	refreshGit: () => void | Promise<void>;
 	showTransientToast: (ok: boolean, text: string, durationMs?: number) => void;
 	modelPickerOpen: boolean;
 	handleCloseModelPicker: () => void;
@@ -167,18 +200,10 @@ export const AppShellOverlays = memo(function AppShellOverlays({
 	plusMenuOpen,
 	handleClosePlusMenu,
 	plusMenuAnchorRefForDropdown,
-	composerMode,
-	setComposerModePersist,
-	gitBranchPickerOpen,
-	handleCloseGitBranchPicker,
-	composerGitBranchAnchorRef,
-	gitStatusOk,
-	gitBranchList,
-	gitBranchListCurrent,
-	onGitBranchListFresh,
-	gitBranch,
-	refreshGit,
-	showTransientToast,
+		composerMode,
+		setComposerModePersist,
+		composerGitBranchAnchorRef,
+		showTransientToast,
 	modelPickerOpen,
 	handleCloseModelPicker,
 	modelPickerAnchorRefForDropdown,
@@ -344,18 +369,10 @@ export const AppShellOverlays = memo(function AppShellOverlays({
 				onSelectMode={setComposerModePersist}
 			/>
 
-			<GitBranchPickerDropdown
-				open={gitBranchPickerOpen}
-				onClose={handleCloseGitBranchPicker}
-				anchorRef={composerGitBranchAnchorRef}
-				shell={shell ?? null}
-				repoReady={gitStatusOk}
-				branches={gitBranchList}
-				listCurrent={gitBranchListCurrent}
-				onBranchListFresh={onGitBranchListFresh}
-				displayBranch={gitBranch}
-				onAfterGitChange={() => void refreshGit()}
-				onNotify={showTransientToast}
+			<GitBranchPickerOverlaySection
+				shell={shell}
+				composerGitBranchAnchorRef={composerGitBranchAnchorRef}
+				showTransientToast={showTransientToast}
 			/>
 
 			<ModelPickerDropdown

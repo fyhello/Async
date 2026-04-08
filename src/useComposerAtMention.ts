@@ -233,6 +233,10 @@ export function useComposerAtMention(
 		[closeAtMenu, getRich, makeDomHandlers]
 	);
 
+	/** 避免 applyAtSelection 随 onFileChipPreview 等抖动 → handleAtKeyDown 重建 → sharedComposerProps 连带失效 */
+	const applyAtSelectionRef = useRef(applyAtSelection);
+	applyAtSelectionRef.current = applyAtSelection;
+
 	const handleAtKeyDown = useCallback(
 		(e: React.KeyboardEvent): boolean => {
 			if (!atOpen) {
@@ -267,7 +271,7 @@ export function useComposerAtMention(
 				const hi = highlightRef.current;
 				const it = list[Math.min(hi, list.length - 1)];
 				if (it) {
-					applyAtSelection(it);
+					applyAtSelectionRef.current(it);
 				}
 				return true;
 			}
@@ -279,7 +283,7 @@ export function useComposerAtMention(
 			}
 			return false;
 		},
-		[atOpen, applyAtSelection, closeAtMenu]
+		[atOpen, closeAtMenu]
 	);
 
 	return {

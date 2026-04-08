@@ -1,5 +1,11 @@
 import { memo, useCallback, useEffect, type RefObject } from 'react';
-import { useAppShellChrome, useAppShellGit, useAppShellWorkspace } from './app/appShellContexts';
+import {
+	useAppShellChrome,
+	useAppShellGitActions,
+	useAppShellGitFiles,
+	useAppShellGitMeta,
+	useAppShellWorkspace,
+} from './app/appShellContexts';
 import { FileTypeIcon } from './fileTypeIcons';
 import { GitUnavailableState } from './gitBadge';
 import { classifyGitUnavailableReason, type GitUnavailableReason } from './gitAvailability';
@@ -17,19 +23,15 @@ import {
 } from './icons';
 import type { SettingsNavId } from './SettingsPage';
 import { EditorGitScmPathList } from './GitScmVirtualLists';
-import {
-	WorkspaceExplorer,
-	type GitPathStatusMap,
-	type WorkspaceExplorerActions,
-} from './WorkspaceExplorer';
+import { WorkspaceExplorer, type WorkspaceExplorerActions } from './WorkspaceExplorer';
 
 type Shell = NonNullable<Window['asyncShell']>;
 type SearchResult = { rel: string; fileName: string; dir: string };
 
-/** 资源管理器 Git 刷新：独立订阅 Git context，避免整栏随 props 抖动。 */
+/** 资源管理器 Git 刷新：仅订阅 Git Actions（稳定引用），fullStatus 大对象更新时不重渲。 */
 const EditorExplorerGitRefreshButton = memo(function EditorExplorerGitRefreshButton() {
 	const { t } = useAppShellChrome();
-	const { refreshGit } = useAppShellGit();
+	const { refreshGit } = useAppShellGitActions();
 	return (
 		<button
 			type="button"
@@ -52,7 +54,8 @@ const EditorGitTabButton = memo(function EditorGitTabButton({
 	onActivate: () => void;
 }) {
 	const { t } = useAppShellChrome();
-	const { refreshGit, loadGitDiffPreviews } = useAppShellGit();
+	const { refreshGit } = useAppShellGitActions();
+	const { loadGitDiffPreviews } = useAppShellGitFiles();
 	return (
 		<button
 			type="button"
@@ -86,14 +89,9 @@ const EditorLeftSidebarGitPane = memo(function EditorLeftSidebarGitPane({
 }) {
 	const { t } = useAppShellChrome();
 	const { workspace } = useAppShellWorkspace();
-	const {
-		gitLines,
-		gitChangedPaths,
-		gitStatusOk,
-		refreshGit,
-		loadGitDiffPreviews,
-		gitPathStatus,
-	} = useAppShellGit();
+	const { refreshGit } = useAppShellGitActions();
+	const { gitLines, gitStatusOk } = useAppShellGitMeta();
+	const { gitChangedPaths, gitPathStatus, loadGitDiffPreviews } = useAppShellGitFiles();
 
 	const gitUnavailableReason: GitUnavailableReason = gitStatusOk
 		? 'none'
@@ -165,6 +163,38 @@ const EditorLeftSidebarGitPane = memo(function EditorLeftSidebarGitPane({
 	);
 });
 
+/** 仅订阅 Git Files，使资源管理器装饰与左侧栏其它区（search/git tab）在 fullStatus 时解耦 */
+const EditorWorkspaceExplorerGate = memo(function EditorWorkspaceExplorerGate({
+	shell,
+	workspace,
+	editorSidebarSelectedRel,
+	workspaceExplorerActions,
+	onExplorerOpenFile,
+}: {
+	shell: Shell;
+	workspace: string;
+	editorSidebarSelectedRel: string;
+	workspaceExplorerActions: WorkspaceExplorerActions | null;
+	onExplorerOpenFile: (rel: string) => void;
+}) {
+	const { gitPathStatus } = useAppShellGitFiles();
+	const { treeEpoch } = useAppShellGitMeta();
+	return (
+		<WorkspaceExplorer
+			key={workspace}
+			shell={shell}
+			pathStatus={gitPathStatus}
+			selectedRel={editorSidebarSelectedRel}
+			treeEpoch={treeEpoch}
+			onOpenFile={onExplorerOpenFile}
+			directoryIconMode="hidden"
+			indentBase={0}
+			indentStep={8}
+			explorerActions={workspaceExplorerActions}
+		/>
+	);
+});
+
 interface EditorLeftSidebarProps {
 	shell: Shell | undefined;
 	workspace: string | null;
@@ -178,9 +208,6 @@ interface EditorLeftSidebarProps {
 	editorSidebarSelectedRel: string;
 	editorExplorerScrollRef: RefObject<HTMLDivElement | null>;
 	workspaceExplorerActions: WorkspaceExplorerActions | null;
-	gitPathStatus: GitPathStatusMap;
-	/** 随 Git 刷新 / 工作区切换递增；资源管理器装饰用 */
-	treeEpoch: number;
 	editorSidebarSearchQuery: string;
 	setEditorSidebarSearchQuery: (q: string) => void;
 	normalizedEditorSidebarSearchQuery: string;
@@ -206,8 +233,6 @@ export const EditorLeftSidebar = memo(function EditorLeftSidebar({
 	editorSidebarSelectedRel,
 	editorExplorerScrollRef,
 	workspaceExplorerActions,
-	gitPathStatus,
-	treeEpoch,
 	editorSidebarSearchQuery,
 	setEditorSidebarSearchQuery,
 	normalizedEditorSidebarSearchQuery,
@@ -331,17 +356,12 @@ export const EditorLeftSidebar = memo(function EditorLeftSidebar({
 							}`}
 						>
 							{hasShellAndWorkspace ? (
-								<WorkspaceExplorer
-									key={workspace!}
+								<EditorWorkspaceExplorerGate
 									shell={shell!}
-									pathStatus={gitPathStatus}
-									selectedRel={editorSidebarSelectedRel}
-									treeEpoch={treeEpoch}
-									onOpenFile={onExplorerOpenFile}
-									directoryIconMode="hidden"
-									indentBase={0}
-									indentStep={8}
-									explorerActions={workspaceExplorerActions}
+									workspace={workspace!}
+									editorSidebarSelectedRel={editorSidebarSelectedRel}
+									workspaceExplorerActions={workspaceExplorerActions}
+									onExplorerOpenFile={onExplorerOpenFile}
 								/>
 							) : (
 								<div className="ref-editor-sidebar-empty">

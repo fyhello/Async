@@ -2,6 +2,9 @@ import {
 	Fragment,
 	memo,
 	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
 	useState,
 	type ComponentProps,
 	type Dispatch,
@@ -23,7 +26,13 @@ import { AgentMistakeLimitDialog, type MistakeLimitPayload } from './AgentMistak
 import { PlanReviewPanel } from './PlanReviewPanel';
 import { ComposerThoughtBlock } from './ComposerThoughtBlock';
 import { UserMessageRich } from './UserMessageRich';
-import { assistantMessageUsesAgentToolProtocol, extractLastTodosFromContent, type FileChangeSummary } from './agentChatSegments';
+import {
+	assistantMessageUsesAgentToolProtocol,
+	extractLastTodosFromContent,
+	segmentAssistantContentUnified,
+} from './agentChatSegments';
+import { computeMergedAgentFileChanges } from './agentFileChangesCompute';
+import { useAppShellGitFiles, useAppShellGitMeta } from './app/appShellContexts';
 import { userMessageToSegments, type ComposerSegment } from './composerSegments';
 import type { WizardPending } from './hooks/useWizardPending';
 import type { TFunction } from './i18n';
@@ -117,7 +126,8 @@ export type AgentChatPanelProps = {
 	onPlanTodoToggle: (id: string) => void;
 	toolApprovalRequest: ToolApprovalPayload | null;
 	respondToolApproval: (allow: boolean) => void;
-	agentFileChanges: FileChangeSummary[];
+	/** 逐文件忽略改动条；与 Git 合并后的列表在面板内计算，避免 Git fullStatus 拖垮 useAgentChatPanelProps */
+	dismissedFiles: ReadonlySet<string>;
 	fileChangesDismissed: boolean;
 	onKeepAllEdits: () => void;
 	onRevertAllEdits: () => void;
@@ -128,8 +138,12 @@ export type AgentChatPanelProps = {
 	agentPlanSummaryCard: ReactNode;
 };
 
-/** 达到条数后启用虚拟列表（与 .ref-messages-track 的 gap 对齐，减轻长对话 DOM 压力） */
-const MESSAGE_LIST_VIRTUAL_THRESHOLD = 48;
+/**
+ * 虚拟列表启停阈值做成滞后区间，避免消息数在边界附近时发送一条消息就立刻从平面轨道切到虚拟轨道，
+ * 导致 sticky 行为、测量与滚动位置在同一帧内一起变化。
+ */
+const MESSAGE_LIST_VIRTUAL_ENABLE_THRESHOLD = 28;
+const MESSAGE_LIST_VIRTUAL_DISABLE_THRESHOLD = 20;
 
 /** 仅长列表挂载：短对话不调用 useVirtualizer，避免与 composer 测高等同步布局挤在同一任务 */
 const AgentMessagesVirtualizedTrack = memo(function AgentMessagesVirtualizedTrack({
@@ -147,11 +161,13 @@ const AgentMessagesVirtualizedTrack = memo(function AgentMessagesVirtualizedTrac
 	count: number;
 	renderRow: (index: number) => ReactNode;
 }) {
+	/** 条数不多时 overscan 过大等于整表挂载（如 count=20, overscan=12 → 常渲染全部行） */
+	const overscan = count <= 24 ? 3 : count <= 60 ? 5 : 10;
 	const virtualizer = useVirtualizer({
 		count,
 		getScrollElement: () => viewportRef.current,
-		estimateSize: () => 140,
-		overscan: 12,
+		estimateSize: () => 160,
+		overscan,
 		gap: messageTrackGap,
 		getItemKey: (index) => `${conversationRenderKey}-${index}`,
 	});
@@ -256,7 +272,7 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 	onPlanTodoToggle,
 	toolApprovalRequest,
 	respondToolApproval,
-	agentFileChanges,
+	dismissedFiles,
 	fileChangesDismissed,
 	onKeepAllEdits,
 	onRevertAllEdits,
@@ -269,6 +285,25 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 	if (import.meta.env.DEV) {
 		console.log(`[perf] AgentChatPanel render: thread=${messagesThreadId}, messages=${displayMessages.length}, hasConv=${hasConversation}`);
 	}
+	const { gitStatusOk } = useAppShellGitMeta();
+	const { gitChangedPaths, diffPreviews } = useAppShellGitFiles();
+	const segmentCacheRef = useRef<{
+		content: string;
+		result: ReturnType<typeof segmentAssistantContentUnified>;
+	} | null>(null);
+	const agentFileChanges = useMemo(
+		() =>
+			computeMergedAgentFileChanges(
+				displayMessages,
+				composerMode,
+				t,
+				dismissedFiles,
+				{ gitStatusOk, gitChangedPaths, diffPreviews },
+				segmentCacheRef
+			),
+		[displayMessages, composerMode, t, dismissedFiles, gitStatusOk, gitChangedPaths, diffPreviews]
+	);
+
 	const isEditorRail = layout === 'editor-rail';
 	const [collapsedTodos, setCollapsedTodos] = useState<Set<number>>(new Set());
 	const toggleTodoCollapse = useCallback((msgIndex: number) => {
@@ -281,8 +316,31 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 	}, []);
 	const conversationRenderKey = messagesThreadId ?? 'no-thread';
 	const messageTrackGap = isEditorRail ? 20 : 22;
-	const virtualListEnabled =
-		hasConversation && displayMessages.length >= MESSAGE_LIST_VIRTUAL_THRESHOLD;
+	const [virtualListEnabled, setVirtualListEnabled] = useState(
+		() => hasConversation && displayMessages.length >= MESSAGE_LIST_VIRTUAL_ENABLE_THRESHOLD
+	);
+
+	useEffect(() => {
+		// 线程切换时按新会话长度重新决定起始模式，避免沿用上一线程的虚拟化状态。
+		setVirtualListEnabled(
+			hasConversation && displayMessages.length >= MESSAGE_LIST_VIRTUAL_ENABLE_THRESHOLD
+		);
+	}, [conversationRenderKey]);
+
+	useEffect(() => {
+		setVirtualListEnabled((prev) => {
+			if (!hasConversation) {
+				return false;
+			}
+			if (displayMessages.length >= MESSAGE_LIST_VIRTUAL_ENABLE_THRESHOLD) {
+				return true;
+			}
+			if (displayMessages.length <= MESSAGE_LIST_VIRTUAL_DISABLE_THRESHOLD) {
+				return false;
+			}
+			return prev;
+		});
+	}, [hasConversation, displayMessages.length]);
 
 	const messageNodeAtIndex = (i: number): ReactNode => {
 			const m = displayMessages[i];

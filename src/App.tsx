@@ -7,6 +7,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	startTransition,
 	useTransition,
 	memo,
 	type RefObject,
@@ -16,31 +17,20 @@ import type { editor as MonacoEditorNS } from 'monaco-editor';
 import { ChatMarkdown } from './ChatMarkdown';
 import { type WorkspaceExplorerActions } from './WorkspaceExplorer';
 import {
+	type AgentPendingPatch,
 	type ChatPlanExecutePayload,
 	type TurnTokenUsage,
 } from './ipcTypes';
 import { buildAgentFilePreviewHunks } from './agentFilePreviewDiff';
-import {
-	agentChangeKeyFromDiff,
-	segmentAssistantContentUnified,
-	collectFileChanges,
-	countDiffAddDel,
-} from './agentChatSegments';
+import { agentChangeKeyFromDiff, countDiffAddDel } from './agentChatSegments';
 import {
 	clearPersistedAgentFileChanges,
 	hashAgentAssistantContent,
 	readPersistedAgentFileChanges,
 	writePersistedAgentFileChanges,
 } from './agentFileChangesPersist';
-import {
-	mergeAgentFileChangesWithGit,
-	normalizeWorkspaceRelPath,
-	workspaceRelPathsEqual,
-} from './agentFileChangesFromGit';
-import {
-	AgentCommandPermissionDropdown,
-	type CommandPermissionMode,
-} from './AgentCommandPermissionDropdown';
+import { normalizeWorkspaceRelPath, workspaceRelPathsEqual } from './agentFileChangesFromGit';
+import { computeMergedAgentFileChanges } from './agentFileChangesCompute';
 import type { SettingsNavId, SettingsPageProps } from './SettingsPage';
 import {
 	applyThemePresetToAppearance,
@@ -79,11 +69,10 @@ import { getAtMentionRange } from './composerAtMention';
 import { textBeforeCaretForAt } from './composerRichDom';
 import { useComposerAtMention, type AtComposerSlot } from './useComposerAtMention';
 import { useComposerSlashCommand } from './useComposerSlashCommand';
-import {
-	type AgentCustomization,
-	type AgentRuleScope,
-} from './agentSettingsTypes';
+import { type AgentRuleScope } from './agentSettingsTypes';
 import { normalizeIndexingSettings, type IndexingSettingsState } from './indexingSettingsTypes';
+
+const EMPTY_AGENT_PENDING_PATCHES: AgentPendingPatch[] = [];
 import { tabIdFromPath, type MarkdownTabView } from './EditorTabBar';
 import {
 	isMarkdownEditorPath,
@@ -94,16 +83,7 @@ import {
 import { isPlanMdPath, planExecutedKey } from './planExecutedKey';
 import { workspaceRelativeFileUrl } from './workspaceUri';
 import { voidShellDebugLog } from './tabCloseDebug';
-import {
-	classifyGitUnavailableReason,
-	gitBranchTriggerTitle,
-	type GitUnavailableReason,
-} from './gitAvailability';
-import {
-	IconGitSCM, IconChevron,
-	IconPencil, IconTrash, IconCheckCircle,
-} from './icons';
-import { useGitIntegration } from './hooks/useGitIntegration';
+import { IconPencil, IconTrash, IconCheckCircle } from './icons';
 import { useSettings } from './hooks/useSettings';
 import { usePlanSystem } from './hooks/usePlanSystem';
 import {
@@ -135,25 +115,26 @@ import { runDesktopShellInit } from './app/desktopShellInit';
 import {
 	DEFAULT_SHELL_LAYOUT_MODE_KEY,
 	DEFAULT_SIDEBAR_LAYOUT_KEY,
-	RESIZE_HANDLE_PX,
 	clampSidebarLayout,
 	defaultQuarterRailWidths,
 	readSidebarLayout,
 	readStoredShellLayoutModeFromKey,
 	syncDesktopSidebarLayout,
-	writeStoredShellLayoutMode,
 	type ShellLayoutMode,
 } from './app/shellLayoutStorage';
 import {
 	AppShellProviders,
 	useAppShellChrome,
 	useAppShellWorkspace,
-	useAppShellGit,
+	useAppShellGitActions,
+	useAppShellGitMeta,
+	useAppShellGitFiles,
 	useAppShellSettings,
 } from './app/appShellContexts';
 import { AppShellMenubar } from './app/AppShellMenubar';
 import { AppShellOverlays } from './app/AppShellOverlays';
-import { ShellLeftRailGroup, ShellCenterRightGroup } from './app/ShellWorkspaceColumns';
+import type { ShellLeftRailGroupProps, ShellCenterRightGroupProps } from './app/ShellWorkspaceColumns';
+import { ShellWorkspaceGrid } from './app/ShellWorkspaceGrid';
 import { formatThreadRowSubtitle, threadRowTitle } from './app/threadRowUi';
 
 const EditorMainPanel = lazy(() => import('./EditorMainPanel').then((m) => ({ default: m.EditorMainPanel })));
@@ -180,10 +161,6 @@ function workspacePathParent(full: string): string {
 		return '';
 	}
 	return norm.slice(0, i);
-}
-
-function shellCommandPermissionMode(agent: AgentCustomization | undefined): CommandPermissionMode {
-	return agent?.confirmShellCommands === false ? 'always' : 'ask';
 }
 
 function useAsyncShell() {
@@ -308,27 +285,6 @@ export default function App({ appSurface }: { appSurface?: LayoutMode } = {}) {
 	});
 
 	const {
-		gitBranch,
-		gitLines,
-		gitPathStatus,
-		gitChangedPaths,
-		gitStatusOk,
-		gitBranchList,
-		gitBranchListCurrent,
-		diffPreviews,
-		diffLoading,
-		gitActionError,
-		setGitActionError,
-		treeEpoch,
-		gitBranchPickerOpen,
-		setGitBranchPickerOpen,
-		diffTotals,
-		refreshGit,
-		loadGitDiffPreviews,
-		onGitBranchListFresh,
-	} = useGitIntegration(shell, workspace);
-
-	const {
 		modelProviders,
 		defaultModel,
 		modelEntries,
@@ -437,49 +393,6 @@ export default function App({ appSurface }: { appSurface?: LayoutMode } = {}) {
 		]
 	);
 
-	const gitSlice = useMemo(
-		() => ({
-			gitBranch,
-			gitLines,
-			gitPathStatus,
-			gitChangedPaths,
-			gitStatusOk,
-			gitBranchList,
-			gitBranchListCurrent,
-			diffPreviews,
-			diffLoading,
-			gitActionError,
-			setGitActionError,
-			treeEpoch,
-			gitBranchPickerOpen,
-			setGitBranchPickerOpen,
-			diffTotals,
-			refreshGit,
-			loadGitDiffPreviews,
-			onGitBranchListFresh,
-		}),
-		[
-			gitBranch,
-			gitLines,
-			gitPathStatus,
-			gitChangedPaths,
-			gitStatusOk,
-			gitBranchList,
-			gitBranchListCurrent,
-			diffPreviews,
-			diffLoading,
-			gitActionError,
-			setGitActionError,
-			treeEpoch,
-			gitBranchPickerOpen,
-			setGitBranchPickerOpen,
-			diffTotals,
-			refreshGit,
-			loadGitDiffPreviews,
-			onGitBranchListFresh,
-		]
-	);
-
 	const settingsSlice = useMemo(
 		() => ({
 			modelProviders,
@@ -556,12 +469,7 @@ export default function App({ appSurface }: { appSurface?: LayoutMode } = {}) {
 	);
 
 	return (
-		<AppShellProviders
-			chrome={chromeSlice}
-			workspace={workspaceSlice}
-			git={gitSlice}
-			settings={settingsSlice}
-		>
+		<AppShellProviders chrome={chromeSlice} workspace={workspaceSlice} settings={settingsSlice}>
 			<AppMainWorkspace />
 		</AppShellProviders>
 	);
@@ -606,26 +514,16 @@ function AppMainWorkspaceInner() {
 		setCollapsedAgentWorkspacePaths,
 	} = useAppShellWorkspace();
 
-	const {
-		gitBranch,
-		gitLines,
-		gitPathStatus,
-		gitChangedPaths,
-		gitStatusOk,
-		gitBranchList,
-		gitBranchListCurrent,
-		diffPreviews,
-		diffLoading,
-		gitActionError,
-		setGitActionError,
-		treeEpoch,
-		gitBranchPickerOpen,
-		setGitBranchPickerOpen,
-		diffTotals,
-		refreshGit,
-		loadGitDiffPreviews,
-		onGitBranchListFresh,
-	} = useAppShellGit();
+	const workspaceFileListRef = useRef(workspaceFileList);
+	workspaceFileListRef.current = workspaceFileList;
+
+	const { refreshGit, setGitActionError, setGitBranchPickerOpen } = useAppShellGitActions();
+	const { gitStatusOk } = useAppShellGitMeta();
+	const { gitChangedPaths, diffPreviews } = useAppShellGitFiles();
+
+	/** Git 大对象经 ref 供长生命周期回调读取，避免 fullStatus 引用抖动连带 chat/composer props 失效 */
+	const agentGitPackRef = useRef({ gitStatusOk, gitChangedPaths, diffPreviews });
+	agentGitPackRef.current = { gitStatusOk, gitChangedPaths, diffPreviews };
 
 	const {
 		modelProviders,
@@ -638,7 +536,6 @@ function AppMainWorkspaceInner() {
 		modelPickerItems,
 		modelPillLabel,
 		agentCustomization,
-		setAgentCustomization,
 		refreshWorkspaceDiskSkills,
 		mergedAgentCustomization,
 		onChangeMergedAgentCustomization,
@@ -697,6 +594,10 @@ function AppMainWorkspaceInner() {
 		loadMessages,
 		resetThreadState,
 	} = useThreads(shell);
+
+	/** onSelectThread 内读取最新值：工作区打开路径已 loadMessages 后避免同线程重复 IPC */
+	const messagesThreadIdRef = useRef(messagesThreadId);
+	messagesThreadIdRef.current = messagesThreadId;
 
 	// 开发环境：记录阻塞主线程 ≥50ms 的任务（与窗口拖动卡顿强相关）
 	useEffect(() => {
@@ -772,6 +673,9 @@ function AppMainWorkspaceInner() {
 		resetAgentReviewState,
 	} = useAgentFileReview();
 
+	const agentReviewPendingByThreadRef = useRef(agentReviewPendingByThread);
+	agentReviewPendingByThreadRef.current = agentReviewPendingByThread;
+
 	const {
 		setParsedPlan,
 		planFilePath, setPlanFilePath,
@@ -811,7 +715,7 @@ function AppMainWorkspaceInner() {
 	const [agentRightSidebarView, setAgentRightSidebarView] = useState<AgentRightSidebarView>('git');
 	const [commitMsg, setCommitMsg] = useState('');
 	const [lastTurnUsage, setLastTurnUsage] = useState<TurnTokenUsage | null>(null);
-	const [layoutSwitchPending, startLayoutSwitchTransition] = useTransition();
+	const [layoutSwitchPending] = useTransition();
 	const [layoutSwitchTarget, setLayoutSwitchTarget] = useState<LayoutMode | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const [plusMenuOpen, setPlusMenuOpen] = useState(false);
@@ -1254,10 +1158,6 @@ function AppMainWorkspaceInner() {
 	]);
 
 	const hasConversation = messages.length > 0 || !!streaming;
-	const changeCount = gitChangedPaths.length;
-	const gitUnavailableReason: GitUnavailableReason = gitStatusOk
-		? 'none'
-		: classifyGitUnavailableReason(gitLines[0]);
 	const normalizedEditorSidebarSearchQuery = editorSidebarSearchQuery.trim().toLowerCase();
 	const editorSidebarSearchResults = useMemo(() => {
 		if (!normalizedEditorSidebarSearchQuery) {
@@ -1311,10 +1211,12 @@ function AppMainWorkspaceInner() {
 		return t?.title ?? workspaceBasename;
 	}, [threads, currentId, workspaceBasename]);
 
-	const pendingAgentPatches = useMemo(
-		() => (currentId ? agentReviewPendingByThread[currentId] ?? [] : []),
-		[currentId, agentReviewPendingByThread]
-	);
+	const pendingAgentPatches = useMemo(() => {
+		if (!currentId) {
+			return EMPTY_AGENT_PENDING_PATCHES;
+		}
+		return agentReviewPendingByThread[currentId] ?? EMPTY_AGENT_PENDING_PATCHES;
+	}, [currentId, agentReviewPendingByThread]);
 	const canToggleTerminal = layoutMode === 'editor' && !!workspace;
 	const canToggleDiffPanel = layoutMode === 'agent';
 	const currentThreadIndex = currentId ? threadsChrono.findIndex((thread) => thread.id === currentId) : -1;
@@ -1607,55 +1509,66 @@ function AppMainWorkspaceInner() {
 		}
 	}, [currentId, clearAgentReviewForThread]);
 
-	const persistComposerAttachments = useCallback(
-		async (files: File[]): Promise<string[]> => {
-			if (!shell) {
-				return [];
-			}
-			if (!workspace) {
-				flashComposerAttachErr(t('composer.attach.noWorkspace'));
-				return [];
-			}
-			const out: string[] = [];
-			for (const f of files) {
-				const b64 = await new Promise<string>((resolve, reject) => {
-					const r = new FileReader();
-					r.onload = () => {
-						const d = r.result as string;
-						const i = d.indexOf(',');
-						resolve(i >= 0 ? d.slice(i + 1) : d);
-					};
-					r.onerror = () => reject(r.error ?? new Error('read'));
-					r.readAsDataURL(f);
-				});
-				const r = (await shell.invoke('workspace:saveComposerAttachment', {
-					base64: b64,
-					fileName: f.name,
-				})) as { ok?: boolean; relPath?: string; error?: string };
-				if (r?.ok && typeof r.relPath === 'string') {
-					out.push(r.relPath);
+	const persistComposerShellRef = useRef(shell);
+	const persistComposerWorkspaceRef = useRef(workspace);
+	const persistComposerTRef = useRef(t);
+	const persistComposerFlashErrRef = useRef(flashComposerAttachErr);
+	persistComposerShellRef.current = shell;
+	persistComposerWorkspaceRef.current = workspace;
+	persistComposerTRef.current = t;
+	persistComposerFlashErrRef.current = flashComposerAttachErr;
+
+	const persistComposerAttachments = useCallback(async (files: File[]): Promise<string[]> => {
+		const sh = persistComposerShellRef.current;
+		if (!sh) {
+			return [];
+		}
+		const ws = persistComposerWorkspaceRef.current;
+		const tr = persistComposerTRef.current;
+		const flash = persistComposerFlashErrRef.current;
+		if (!ws) {
+			flash(tr('composer.attach.noWorkspace'));
+			return [];
+		}
+		const out: string[] = [];
+		for (const f of files) {
+			const b64 = await new Promise<string>((resolve, reject) => {
+				const r = new FileReader();
+				r.onload = () => {
+					const d = r.result as string;
+					const i = d.indexOf(',');
+					resolve(i >= 0 ? d.slice(i + 1) : d);
+				};
+				r.onerror = () => reject(r.error ?? new Error('read'));
+				r.readAsDataURL(f);
+			});
+			const r = (await sh.invoke('workspace:saveComposerAttachment', {
+				base64: b64,
+				fileName: f.name,
+			})) as { ok?: boolean; relPath?: string; error?: string };
+			if (r?.ok && typeof r.relPath === 'string') {
+				out.push(r.relPath);
+			} else {
+				const err = r?.error;
+				if (err === 'too-large') {
+					flash(tr('composer.attach.tooLarge'));
+				} else if (err === 'no-workspace') {
+					flash(tr('composer.attach.noWorkspace'));
 				} else {
-					const err = r?.error;
-					if (err === 'too-large') {
-						flashComposerAttachErr(t('composer.attach.tooLarge'));
-					} else if (err === 'no-workspace') {
-						flashComposerAttachErr(t('composer.attach.noWorkspace'));
-					} else {
-						flashComposerAttachErr(t('composer.attach.saveFailed'));
-					}
+					flash(tr('composer.attach.saveFailed'));
 				}
 			}
-			return out;
-		},
-		[shell, workspace, t, flashComposerAttachErr]
-	);
+		}
+		return out;
+	}, []);
 
 	const onApplyAgentPatchOne = useCallback(
 		async (id: string) => {
-			if (!shell || !currentId) {
+			const cid = currentIdRef.current;
+			if (!shell || !cid) {
 				return;
 			}
-			const list = agentReviewPendingByThread[currentId] ?? [];
+			const list = agentReviewPendingByThreadRef.current[cid] ?? EMPTY_AGENT_PENDING_PATCHES;
 			const patch = list.find((p) => p.id === id);
 			if (!patch) {
 				return;
@@ -1663,36 +1576,37 @@ function AppMainWorkspaceInner() {
 			setAgentReviewBusy(true);
 			try {
 				const ar = (await shell.invoke('agent:applyDiffChunk', {
-					threadId: currentId,
+					threadId: cid,
 					chunk: patch.chunk,
 				})) as { applied: string[]; failed: { path: string; reason: string }[] };
 				if (ar.applied.length > 0) {
 					setAgentReviewPendingByThread((prev) => ({
 						...prev,
-						[currentId]: (prev[currentId] ?? []).filter((x) => x.id !== id),
+						[cid]: (prev[cid] ?? []).filter((x) => x.id !== id),
 					}));
 				}
-				await loadMessages(currentId);
+				await loadMessages(cid);
 				await refreshGit();
 			} finally {
 				setAgentReviewBusy(false);
 			}
 		},
-		[shell, currentId, agentReviewPendingByThread, loadMessages, refreshGit]
+		[shell, loadMessages, refreshGit]
 	);
 
 	const onApplyAgentPatchesAll = useCallback(async () => {
-		if (!shell || !currentId) {
+		const cid = currentIdRef.current;
+		if (!shell || !cid) {
 			return;
 		}
-		const list = agentReviewPendingByThread[currentId] ?? [];
+		const list = agentReviewPendingByThreadRef.current[cid] ?? EMPTY_AGENT_PENDING_PATCHES;
 		if (list.length === 0) {
 			return;
 		}
 		setAgentReviewBusy(true);
 		try {
 			const ar = (await shell.invoke('agent:applyDiffChunks', {
-				threadId: currentId,
+				threadId: cid,
 				items: list.map((p) => ({ id: p.id, chunk: p.chunk })),
 			})) as {
 				applied: string[];
@@ -1702,14 +1616,14 @@ function AppMainWorkspaceInner() {
 			const okIds = new Set(ar.succeededIds ?? []);
 			setAgentReviewPendingByThread((prev) => ({
 				...prev,
-				[currentId]: (prev[currentId] ?? []).filter((p) => !okIds.has(p.id)),
+				[cid]: (prev[cid] ?? []).filter((p) => !okIds.has(p.id)),
 			}));
-			await loadMessages(currentId);
+			await loadMessages(cid);
 			await refreshGit();
 		} finally {
 			setAgentReviewBusy(false);
 		}
-	}, [shell, currentId, agentReviewPendingByThread, loadMessages, refreshGit]);
+	}, [shell, loadMessages, refreshGit]);
 
 	useEffect(() => {
 		if (!shell) {
@@ -1918,13 +1832,21 @@ function AppMainWorkspaceInner() {
 				error?: string;
 			};
 			if (r.ok && r.path) {
+				// 主进程解析后的根路径与当前 workspace 相同时勿再 applyWorkspacePath，否则会 clearWorkspaceConversationState
+				// 把消息清空（侧栏 threadWorkspaceRoot 与 workspace 字符串略不一致时易误触发）。
+				if (workspace && normWorkspaceRootKey(r.path) === normWorkspaceRootKey(workspace)) {
+					if (import.meta.env.DEV) {
+						console.log('[perf] openWorkspaceByPath: skip apply (resolved path matches current workspace)');
+					}
+					return true;
+				}
 				await applyWorkspacePath(r.path);
 				return true;
 			}
 			setWorkspacePickerOpen(true);
 			return false;
 		},
-		[shell, applyWorkspacePath]
+		[shell, applyWorkspacePath, workspace]
 	);
 
 	const writeClipboardText = useCallback(
@@ -2106,7 +2028,6 @@ function AppMainWorkspaceInner() {
 	const handleCloseWorkspaceTools = useCallback(() => setWorkspaceToolsOpen(false), []);
 	const handleCloseModelPicker = useCallback(() => setModelPickerOpen(false), []);
 	const handleClosePlusMenu = useCallback(() => setPlusMenuOpen(false), []);
-	const handleCloseGitBranchPicker = useCallback(() => setGitBranchPickerOpen(false), []);
 	const handleToggleFileMenu = useCallback(() => toggleMenubarMenu('file'), [toggleMenubarMenu]);
 	const handleToggleEditMenu = useCallback(() => toggleMenubarMenu('edit'), [toggleMenubarMenu]);
 	const handleCloseEditorChatMore = useCallback(() => setEditorChatMoreOpen(false), []);
@@ -2143,33 +2064,70 @@ function AppMainWorkspaceInner() {
 				}
 			}
 			const tSelectIpcStart = dev ? performance.now() : 0;
-			await shell.invoke('threads:select', id);
+			if (dev) {
+				console.log(`[perf] onSelectThread: pre-select Δ=${(tSelectIpcStart - t0).toFixed(1)}ms`);
+			}
+			const alreadyCurrentThread = currentIdRef.current === id;
+			if (!alreadyCurrentThread) {
+				await shell.invoke('threads:select', id);
+			} else if (dev) {
+				console.log(`[perf] onSelectThread: skip threads:select (renderer already currentId=${id})`);
+			}
 			const tAfterSelectIpc = dev ? performance.now() : 0;
 			if (dev) {
-				console.log(
-					`[perf] onSelectThread: threads:select ipc=${(tAfterSelectIpc - tSelectIpcStart).toFixed(1)}ms`
-				);
+				if (alreadyCurrentThread) {
+					console.log(`[perf] onSelectThread: threads:select skipped`);
+				} else {
+					console.log(
+						`[perf] onSelectThread: threads:select ipc=${(tAfterSelectIpc - tSelectIpcStart).toFixed(1)}ms`
+					);
+				}
 			}
 
-			// 批量重置所有状态，避免多次渲染
+			// 已展示该线程则跳过 IPC（须在 reset 之前读 ref，且勿用会被 reset 破坏的依赖）
+			const skipReloadSameThread =
+				messagesThreadIdRef.current === id ||
+				(currentIdRef.current === id && messagesRef.current.length > 0);
+
 			if (dev) {
 				console.log(`[perf] onSelectThread: setting states for ${id}`);
 			}
 			setCurrentId(id);
-			setAwaitingReply(false);
-			setStreaming('');
-			setStreamingThinking('');
-			clearStreamingToolPreviewNow();
-			resetLiveAgentBlocks();
-			streamStartedAtRef.current = null;
-			firstTokenAtRef.current = null;
-			setParsedPlan(null);
-			setPlanFilePath(null);
-			setPlanFileRelPath(null);
-			setResendFromUserIndex(null);
-			setComposerSegments([]);
-			setInlineResendSegments([]);
-			setAgentFilePreview(null);
+
+			if (skipReloadSameThread) {
+				// 消息已在内存：流式/plan/预览等非紧急状态用 transition，避免与已有 Markdown 长任务叠成单帧巨型 commit
+				startTransition(() => {
+					setAwaitingReply(false);
+					setStreaming('');
+					setStreamingThinking('');
+					clearStreamingToolPreviewNow();
+					resetLiveAgentBlocks();
+					streamStartedAtRef.current = null;
+					firstTokenAtRef.current = null;
+					setParsedPlan(null);
+					setPlanFilePath(null);
+					setPlanFileRelPath(null);
+					setAgentFilePreview(null);
+				});
+				setResendFromUserIndex(null);
+				setComposerSegments([]);
+				setInlineResendSegments([]);
+			} else {
+				setAwaitingReply(false);
+				setStreaming('');
+				setStreamingThinking('');
+				clearStreamingToolPreviewNow();
+				resetLiveAgentBlocks();
+				streamStartedAtRef.current = null;
+				firstTokenAtRef.current = null;
+				setParsedPlan(null);
+				setPlanFilePath(null);
+				setPlanFileRelPath(null);
+				setResendFromUserIndex(null);
+				setComposerSegments([]);
+				setInlineResendSegments([]);
+				setAgentFilePreview(null);
+			}
 			const tAfterResetStates = dev ? performance.now() : 0;
 			if (dev) {
 				console.log(
@@ -2177,10 +2135,17 @@ function AppMainWorkspaceInner() {
 				);
 			}
 
-			if (dev) {
-				console.log(`[perf] onSelectThread: calling loadMessages for ${id}`);
+			if (skipReloadSameThread) {
+				if (dev) {
+					console.log(`[perf] onSelectThread: skip loadMessages (already showing thread ${id})`);
+				}
+			} else {
+				if (dev) {
+					console.log(`[perf] onSelectThread: calling loadMessages for ${id}`);
+				}
+				await loadMessages(id, onMessagesLoaded);
 			}
-			await loadMessages(id, onMessagesLoaded);
+
 			if (dev) {
 				const tAfterLoad = performance.now();
 				console.log(
@@ -2685,29 +2650,6 @@ function AppMainWorkspaceInner() {
 		[shell, setTransitionOrigin]
 	);
 
-	/** 仅工具栏切换时持久化；打开文件等临时切到 editor 不写偏好 */
-	const pickShellLayoutMode = useCallback(
-		(next: LayoutMode) => {
-			if (layoutPinnedBySurface) {
-				setLayoutSwitchTarget(null);
-				return;
-			}
-			if (next === layoutMode) {
-				setLayoutSwitchTarget(null);
-				return;
-			}
-			setLayoutSwitchTarget(next);
-			startLayoutSwitchTransition(() => {
-				setLayoutMode(next);
-				writeStoredShellLayoutMode(next, shellLayoutStorageKey);
-				if (shell) {
-					void shell.invoke('settings:set', { ui: { layoutMode: next } });
-				}
-			});
-		},
-		[layoutMode, shell, layoutPinnedBySurface, shellLayoutStorageKey]
-	);
-
 	useEffect(() => {
 		if (!layoutSwitchPending) {
 			setLayoutSwitchTarget(null);
@@ -2794,20 +2736,6 @@ function AppMainWorkspaceInner() {
 			setSettingsPageOpen(false);
 		}
 	}, [persistSettings]);
-
-	const switchLayoutModeFromSettings = useCallback(
-		async (next: LayoutMode) => {
-			if (layoutPinnedBySurface) {
-				return;
-			}
-			if (next === layoutMode) {
-				return;
-			}
-			await closeSettingsPage();
-			pickShellLayoutMode(next);
-		},
-		[closeSettingsPage, layoutMode, pickShellLayoutMode, layoutPinnedBySurface]
-	);
 
 	const startSkillCreatorFlow = useCallback(async () => {
 		await closeSettingsPage();
@@ -2915,6 +2843,7 @@ function AppMainWorkspaceInner() {
 				return;
 			}
 
+			const { gitStatusOk, gitChangedPaths, diffPreviews } = agentGitPackRef.current;
 			const normalizedRel = normalizeWorkspaceRelPath(rel);
 			const safeRevealLine =
 				typeof revealLine === 'number' && Number.isFinite(revealLine) && revealLine > 0
@@ -3231,7 +3160,7 @@ function AppMainWorkspaceInner() {
 				reviewMode,
 			});
 		},
-		[currentId, diffPreviews, gitChangedPaths, gitStatusOk, layoutMode, openFileInTab, shell]
+		[currentId, layoutMode, openFileInTab, shell]
 	);
 
 	useEffect(() => {
@@ -3479,6 +3408,14 @@ function AppMainWorkspaceInner() {
 			await openFileInTab(rel, revealLine, revealEndLine, options);
 		},
 		[layoutMode, openAgentSidebarFilePreview, openFileInTab]
+	);
+
+	/** 勿内联箭头传入 useComposerAtMention，否则每轮 render 新引用会拖垮 handleAtKeyDown → sharedComposerProps */
+	const onAtMentionFileChipPreview = useCallback(
+		(relPath: string) => {
+			void onExplorerOpenFile(relPath);
+		},
+		[onExplorerOpenFile]
 	);
 
 	const composerExplorerOpenRel = useCallback((rel: string) => {
@@ -4174,22 +4111,24 @@ function AppMainWorkspaceInner() {
 		[]
 	);
 
-	const atMention = useComposerAtMention(
-		(slot) => (slot === 'inline' && resendIdxRef.current !== null ? setInlineResendSegments : setComposerSegments),
-		composerRichSurface,
-		{
-			gitChangedPaths,
-			currentThreadTitle,
-			workspaceOpen: !!workspace,
-			workspaceFiles: workspaceFileList,
-			onFileChipPreview: (relPath: string) => void onExplorerOpenFile(relPath),
-		}
+	/** 勿每轮 render 新建箭头传入 slash/at hooks，否则 applySlashSelection/handle*KeyDown 全链抖动 → sharedComposerProps 永久失效 */
+	const getComposerSegmentsSetter = useCallback(
+		(slot: AtComposerSlot) =>
+			slot === 'inline' && resendIdxRef.current !== null ? setInlineResendSegments : setComposerSegments,
+		[setInlineResendSegments, setComposerSegments]
 	);
-	const slashCommand = useComposerSlashCommand(
-		(slot) => (slot === 'inline' && resendIdxRef.current !== null ? setInlineResendSegments : setComposerSegments),
-		composerRichSurface,
-		{ t, userCommands: mergedAgentCustomization.commands }
-	);
+
+	const atMention = useComposerAtMention(getComposerSegmentsSetter, composerRichSurface, {
+		gitChangedPaths,
+		currentThreadTitle,
+		workspaceOpen: !!workspace,
+		workspaceFiles: workspaceFileList,
+		onFileChipPreview: onAtMentionFileChipPreview,
+	});
+	const slashCommand = useComposerSlashCommand(getComposerSegmentsSetter, composerRichSurface, {
+		t,
+		userCommands: mergedAgentCustomization.commands,
+	});
 	const syncComposerOverlays = useCallback(
 		(root: HTMLElement, slot: AtComposerSlot) => {
 			const slice = textBeforeCaretForAt(root);
@@ -4300,29 +4239,8 @@ function AppMainWorkspaceInner() {
 		return idx;
 	}, [displayMessages]);
 
-	const segmentCacheRef = useRef<{ content: string; result: ReturnType<typeof segmentAssistantContentUnified> } | null>(null);
-
-	const agentFileChanges = useMemo(() => {
-		if (composerMode !== 'agent') return [];
-		const lastAssistant = [...displayMessages].reverse().find((m) => m.role === 'assistant');
-		if (!lastAssistant) return [];
-		// 如果内容未变，使用缓存的段分析结果
-		let segs;
-		if (segmentCacheRef.current?.content === lastAssistant.content) {
-			segs = segmentCacheRef.current.result;
-		} else {
-			segs = segmentAssistantContentUnified(lastAssistant.content, { t });
-			segmentCacheRef.current = { content: lastAssistant.content, result: segs };
-		}
-		const all = collectFileChanges(segs);
-		const afterDismiss =
-			dismissedFiles.size > 0 ? all.filter((f) => !dismissedFiles.has(f.path)) : all;
-		return mergeAgentFileChangesWithGit(afterDismiss, {
-			gitStatusOk,
-			gitChangedPaths,
-			diffPreviews,
-		});
-	}, [displayMessages, composerMode, t, dismissedFiles, gitStatusOk, gitChangedPaths, diffPreviews]);
+	const displayMessagesRef = useRef(displayMessages);
+	displayMessagesRef.current = displayMessages;
 
 	/**
 	 * 从 localStorage 恢复「已保留/已撤销全部」或逐文件忽略，绑定当前线程最后一条助手正文。
@@ -4415,7 +4333,17 @@ function AppMainWorkspaceInner() {
 
 	const onRevertAllEdits = useCallback(async () => {
 		if (!shell || composerMode !== 'agent' || !currentId) return;
-		const revertedPaths = new Set(agentFileChanges.map((file) => file.path));
+		const gp = agentGitPackRef.current;
+		const revertedPaths = new Set(
+			computeMergedAgentFileChanges(
+				displayMessagesRef.current,
+				composerMode,
+				t,
+				dismissedFilesRef.current,
+				{ gitStatusOk: gp.gitStatusOk, gitChangedPaths: gp.gitChangedPaths, diffPreviews: gp.diffPreviews },
+				null
+			).map((file) => file.path)
+		);
 		try {
 			const result = (await shell.invoke('agent:revertLastTurn', currentId)) as { ok?: boolean; reverted?: number };
 			if ((result.reverted ?? 0) > 0) {
@@ -4437,7 +4365,7 @@ function AppMainWorkspaceInner() {
 			revertedPaths,
 			new Set()
 		);
-	}, [shell, composerMode, currentId, refreshGit, agentFileChanges]);
+	}, [shell, composerMode, currentId, refreshGit, t]);
 
 	const onKeepFileEdit = useCallback(async (relPath: string) => {
 		if (!shell || !currentId) return;
@@ -4545,11 +4473,16 @@ function AppMainWorkspaceInner() {
 		const len = messages.length;
 		const prev = prevMessagesLenForScrollRef.current;
 		prevMessagesLenForScrollRef.current = len;
-		if (len > prev && messages[len - 1]?.role === 'user') {
+		if (
+			len > prev &&
+			currentId != null &&
+			messagesThreadId === currentId &&
+			messages[len - 1]?.role === 'user'
+		) {
 			pinMessagesToBottomRef.current = true;
 			scrollMessagesToBottom('auto');
 		}
-	}, [messages, scrollMessagesToBottom]);
+	}, [messages, currentId, messagesThreadId, scrollMessagesToBottom]);
 
 	/** 流式 / 思考计时 / 展示列表变化：仅在「粘底」时跟随（每帧合并一次，减轻与 RO 重复滚动） */
 	useLayoutEffect(() => {
@@ -4860,74 +4793,10 @@ function AppMainWorkspaceInner() {
 		persistRailWidths(defaultQuarterRailWidths());
 	}, [persistRailWidths]);
 
-	const commandPermissionMode = shellCommandPermissionMode(agentCustomization);
-
-	const onChangeCommandPermissionMode = useCallback(
-		async (mode: CommandPermissionMode) => {
-			const patch: Partial<AgentCustomization> =
-				mode === 'always'
-					? { confirmShellCommands: false }
-					: {
-							confirmShellCommands: true,
-							skipSafeShellCommandsConfirm: false,
-						};
-			setAgentCustomization((prev) => ({ ...prev, ...patch }));
-			if (!shell) {
-				return;
-			}
-			await shell.invoke('settings:set', { agent: patch });
-		},
-		[shell]
-	);
-
-	const composerGitBranchRowEl = useMemo(
-		() => (
-			<div className="ref-composer-git-branch-row">
-				<AgentCommandPermissionDropdown
-					value={commandPermissionMode}
-					onChange={(mode) => void onChangeCommandPermissionMode(mode)}
-					askLabel={t('agent.commandPermission.ask')}
-					alwaysLabel={t('agent.commandPermission.always')}
-					ariaLabel={t('agent.commandPermission.aria')}
-					disabled={!shell}
-				/>
-				<button
-					ref={composerGitBranchAnchorRef}
-					type="button"
-					className="ref-composer-git-branch-trigger"
-					title={gitBranchTriggerTitle(t, gitStatusOk, gitUnavailableReason)}
-					aria-label={`${t('app.tabGit')}: ${gitBranch}`}
-					aria-expanded={gitBranchPickerOpen}
-					aria-haspopup="dialog"
-					disabled={!gitStatusOk}
-					onClick={(e) => {
-						e.preventDefault();
-						e.stopPropagation();
-						setPlusMenuOpen(false);
-						setModelPickerOpen(false);
-						if (!gitStatusOk) {
-							return;
-						}
-						setGitBranchPickerOpen((o) => !o);
-					}}
-				>
-					<IconGitSCM className="ref-composer-git-branch-ico" aria-hidden />
-					<span className="ref-composer-git-branch-name">{gitBranch}</span>
-					<IconChevron className="ref-composer-git-branch-chev" aria-hidden />
-				</button>
-			</div>
-		),
-		[
-			commandPermissionMode,
-			gitBranch,
-			gitBranchPickerOpen,
-			gitStatusOk,
-			gitUnavailableReason,
-			onChangeCommandPermissionMode,
-			shell,
-			t,
-		]
-	);
+	const onBeforeToggleGitBranchPicker = useCallback(() => {
+		setPlusMenuOpen(false);
+		setModelPickerOpen(false);
+	}, []);
 
 	// 共享给 ChatComposer（send/abort/newThread/openFile 由 ComposerActionsContext 注入，避免对象整体因箭头函数重建）
 	const sharedComposerProps = useMemo(
@@ -4950,7 +4819,8 @@ function AppMainWorkspaceInner() {
 			modelPillLabel,
 			awaitingReply,
 			resendFromUserIndex,
-			composerGitBranchRowEl,
+			composerGitBranchAnchorRef,
+			onBeforeToggleGitBranchPicker,
 			setPlusMenuAnchorSlot,
 			setModelPickerOpen,
 			setPlusMenuOpen,
@@ -4981,7 +4851,8 @@ function AppMainWorkspaceInner() {
 			modelPillLabel,
 			awaitingReply,
 			resendFromUserIndex,
-			composerGitBranchRowEl,
+			composerGitBranchAnchorRef,
+			onBeforeToggleGitBranchPicker,
 			setPlusMenuAnchorSlot,
 			setModelPickerOpen,
 			setPlusMenuOpen,
@@ -4995,15 +4866,13 @@ function AppMainWorkspaceInner() {
 		]
 	);
 
-	const onStartInlineResend = useCallback(
-		(userMessageIndex: number, content: string) => {
-			setPlanQuestion(null);
-			setPlanQuestionRequestId(null);
-			setResendFromUserIndex(userMessageIndex);
-			setInlineResendSegments(userMessageToSegments(content, workspaceFileList));
-		},
-		[workspaceFileList]
-	);
+	/** workspaceFileList 引用常随索引刷新而变；勿让其拖垮 composerGroup（否则与 stable 同时失效） */
+	const onStartInlineResend = useCallback((userMessageIndex: number, content: string) => {
+		setPlanQuestion(null);
+		setPlanQuestionRequestId(null);
+		setResendFromUserIndex(userMessageIndex);
+		setInlineResendSegments(userMessageToSegments(content, workspaceFileListRef.current));
+	}, []);
 
 	const plusMenuAnchorRefForDropdown =
 		plusMenuAnchorSlot === 'hero'
@@ -5332,7 +5201,7 @@ function AppMainWorkspaceInner() {
 		onPlanTodoToggle,
 		toolApprovalRequest,
 		respondToolApproval,
-		agentFileChanges,
+		dismissedFiles,
 		fileChangesDismissed,
 		onKeepAllEdits,
 		onRevertAllEdits,
@@ -5446,8 +5315,6 @@ function AppMainWorkspaceInner() {
 			editorSidebarSelectedRel,
 			editorExplorerScrollRef,
 			workspaceExplorerActions,
-			gitPathStatus,
-			treeEpoch,
 			editorSidebarSearchQuery,
 			setEditorSidebarSearchQuery,
 			normalizedEditorSidebarSearchQuery,
@@ -5472,8 +5339,6 @@ function AppMainWorkspaceInner() {
 			editorSidebarSelectedRel,
 			editorExplorerScrollRef,
 			workspaceExplorerActions,
-			gitPathStatus,
-			treeEpoch,
 			editorSidebarSearchQuery,
 			setEditorSidebarSearchQuery,
 			normalizedEditorSidebarSearchQuery,
@@ -5536,6 +5401,96 @@ function AppMainWorkspaceInner() {
 		editorMainPanelProps,
 	]);
 
+	const shellLeftRailGroupProps = useMemo(
+		(): ShellLeftRailGroupProps => ({
+			layoutMode,
+			leftSidebarOpen,
+			t,
+			beginResizeLeft,
+			resetRailWidths,
+			agentLeftSidebarProps,
+			editorLeftSidebarProps,
+		}),
+		[
+			layoutMode,
+			leftSidebarOpen,
+			t,
+			beginResizeLeft,
+			resetRailWidths,
+			agentLeftSidebarProps,
+			editorLeftSidebarProps,
+		]
+	);
+
+	const shellCenterRightGroupProps = useMemo(
+		(): ShellCenterRightGroupProps => ({
+			layoutMode,
+			agentRightSidebarOpen,
+			t,
+			centerMain: shellWorkspaceCenterMain,
+			hasConversation,
+			onPlanNewIdea,
+			agentChatPanelProps,
+			agentRightSidebarProps,
+			beginResizeRight,
+			resetRailWidths,
+			threadsChrono,
+			currentId,
+			onSelectThread,
+			confirmDeleteId,
+			onDeleteThread,
+			editorThreadHistoryOpen,
+			setEditorThreadHistoryOpen,
+			editorChatMoreOpen,
+			setEditorChatMoreOpen,
+			editorHistoryMenuRef,
+			editorMoreMenuRef,
+			threadSearch,
+			setThreadSearch,
+			todayThreads,
+			archivedThreads,
+			renderThreadItem,
+			setComposerModePersist,
+			onNewThread,
+			setWorkspaceToolsOpen,
+			handleCloseEditorChatMore,
+			handleOpenSettingsGeneral,
+		}),
+		[
+			layoutMode,
+			agentRightSidebarOpen,
+			t,
+			shellWorkspaceCenterMain,
+			hasConversation,
+			onPlanNewIdea,
+			agentChatPanelProps,
+			agentRightSidebarProps,
+			beginResizeRight,
+			resetRailWidths,
+			threadsChrono,
+			currentId,
+			onSelectThread,
+			confirmDeleteId,
+			onDeleteThread,
+			editorThreadHistoryOpen,
+			setEditorThreadHistoryOpen,
+			editorChatMoreOpen,
+			setEditorChatMoreOpen,
+			editorHistoryMenuRef,
+			editorMoreMenuRef,
+			threadSearch,
+			setThreadSearch,
+			todayThreads,
+			archivedThreads,
+			renderThreadItem,
+			setComposerModePersist,
+			onNewThread,
+			setWorkspaceToolsOpen,
+			handleCloseEditorChatMore,
+			handleOpenSettingsGeneral,
+		]
+	);
+
 	const composerActions = useMemo(
 		() => ({
 			onSend: composerInvokeSend,
@@ -5562,7 +5517,9 @@ function AppMainWorkspaceInner() {
 		appRenderCountRef.current += 1;
 		const elapsed = Date.now() - threadSwitchTimeRef.current;
 		if (appRenderCountRef.current <= 5 || appRenderCountRef.current % 10 === 0) {
-			console.log(`[perf] App render #${appRenderCountRef.current} at +${elapsed}ms for thread ${currentId}`);
+			console.log(
+				`[perf] App render #${appRenderCountRef.current} at +${elapsed}ms for currentId=${currentId ?? 'null'} msgsThread=${messagesThreadId ?? 'null'}`
+			);
 		}
 	}
 
@@ -5734,62 +5691,14 @@ function AppMainWorkspaceInner() {
 					onOpenWorkspacePath={(p) => void openWorkspaceByPath(p)}
 				/>
 			) : (
-				<div
-					className={`ref-body ${
-						layoutMode === 'editor'
-							? 'ref-body--editor ref-body--editor-shell'
-							: 'ref-body--agent-shell'
-					}`}
-					style={{
-						gridTemplateColumns:
-							layoutMode === 'agent' && !agentRightSidebarOpen
-								? `${leftSidebarOpen ? railWidths.left : 0}px ${leftSidebarOpen ? RESIZE_HANDLE_PX : 0}px minmax(0, 1fr) 0px 0px`
-								: `${leftSidebarOpen ? railWidths.left : 0}px ${leftSidebarOpen ? RESIZE_HANDLE_PX : 0}px minmax(0, 1fr) ${RESIZE_HANDLE_PX}px ${railWidths.right}px`,
-					}}
-				>
-				<ShellLeftRailGroup
+				<ShellWorkspaceGrid
 					layoutMode={layoutMode}
 					leftSidebarOpen={leftSidebarOpen}
-					t={t}
-					beginResizeLeft={beginResizeLeft}
-					resetRailWidths={resetRailWidths}
-					agentLeftSidebarProps={agentLeftSidebarProps}
-					editorLeftSidebarProps={editorLeftSidebarProps}
-				/>
-				<ShellCenterRightGroup
-					layoutMode={layoutMode}
 					agentRightSidebarOpen={agentRightSidebarOpen}
-					t={t}
-					centerMain={shellWorkspaceCenterMain}
-					hasConversation={hasConversation}
-					onPlanNewIdea={onPlanNewIdea}
-					agentChatPanelProps={agentChatPanelProps}
-					agentRightSidebarProps={agentRightSidebarProps}
-					beginResizeRight={beginResizeRight}
-					resetRailWidths={resetRailWidths}
-					threadsChrono={threadsChrono}
-					currentId={currentId}
-					onSelectThread={onSelectThread}
-					confirmDeleteId={confirmDeleteId}
-					onDeleteThread={onDeleteThread}
-					editorThreadHistoryOpen={editorThreadHistoryOpen}
-					setEditorThreadHistoryOpen={setEditorThreadHistoryOpen}
-					editorChatMoreOpen={editorChatMoreOpen}
-					setEditorChatMoreOpen={setEditorChatMoreOpen}
-					editorHistoryMenuRef={editorHistoryMenuRef}
-					editorMoreMenuRef={editorMoreMenuRef}
-					threadSearch={threadSearch}
-					setThreadSearch={setThreadSearch}
-					todayThreads={todayThreads}
-					archivedThreads={archivedThreads}
-					renderThreadItem={renderThreadItem}
-					setComposerModePersist={setComposerModePersist}
-					onNewThread={onNewThread}
-					setWorkspaceToolsOpen={setWorkspaceToolsOpen}
-					handleCloseEditorChatMore={handleCloseEditorChatMore}
-					handleOpenSettingsGeneral={handleOpenSettingsGeneral}
+					railWidths={railWidths}
+					leftRail={shellLeftRailGroupProps}
+					centerRight={shellCenterRightGroupProps}
 				/>
-			</div>
 			)}
 
 			<AppShellOverlays
@@ -5834,15 +5743,7 @@ function AppMainWorkspaceInner() {
 				plusMenuAnchorRefForDropdown={plusMenuAnchorRefForDropdown}
 				composerMode={composerMode}
 				setComposerModePersist={setComposerModePersist}
-				gitBranchPickerOpen={gitBranchPickerOpen}
-				handleCloseGitBranchPicker={handleCloseGitBranchPicker}
 				composerGitBranchAnchorRef={composerGitBranchAnchorRef}
-				gitStatusOk={gitStatusOk}
-				gitBranchList={gitBranchList}
-				gitBranchListCurrent={gitBranchListCurrent}
-				onGitBranchListFresh={onGitBranchListFresh}
-				gitBranch={gitBranch}
-				refreshGit={refreshGit}
 				showTransientToast={showTransientToast}
 				modelPickerOpen={modelPickerOpen}
 				handleCloseModelPicker={handleCloseModelPicker}
