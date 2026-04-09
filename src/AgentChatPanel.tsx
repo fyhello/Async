@@ -558,8 +558,11 @@ export const AgentChatPanel = memo(function AgentChatPanel({
 				const isNextAssistantStreaming = nextMsg?.role === 'assistant' && (i + 1) === displayMessages.length - 1 && awaitingReply;
 				const userTodos = nextMsg?.role === 'assistant'
 					? (isNextAssistantStreaming && liveAssistantBlocks
-						? extractTodosFromLiveBlocks(liveAssistantBlocks.blocks)
-						: (typeof nextMsg.content === 'string' ? extractLastTodosFromContent(nextMsg.content) : null))
+						? (extractTodosFromLiveBlocks(liveAssistantBlocks.blocks) ??
+								(typeof nextMsg.content === 'string' ? extractLastTodosFromContent(nextMsg.content) : null))
+						: typeof nextMsg.content === 'string'
+							? extractLastTodosFromContent(nextMsg.content)
+							: null)
 					: null;
 				const hasTodoPanel = userTodos != null && userTodos.length > 0;
 

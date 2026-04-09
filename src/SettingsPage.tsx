@@ -913,6 +913,8 @@ export function SettingsPage({
 									onPersistPatch={onPersistIndexingPatch}
 									shell={shell}
 									workspaceOpen={workspaceOpen}
+									agentCustomization={agentCustomization}
+									onChangeAgentCustomization={onChangeAgentCustomization}
 								/>
 							</Suspense>
 						) : null}

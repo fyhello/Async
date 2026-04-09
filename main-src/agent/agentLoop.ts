@@ -23,6 +23,7 @@ import { assembleAgentToolPool, filterMcpToolsByDenyPrefixes } from './agentTool
 import type { TurnTokenUsage } from '../llm/types.js';
 import { llmSdkResponseHeadTimeoutMs } from '../llm/sdkResponseHeadTimeoutMs.js';
 import { withLlmTransportRetry } from '../llm/llmTransportRetry.js';
+import { formatLlmSdkError } from '../llm/formatLlmSdkError.js';
 import { composeSystem, temperatureForMode } from '../llm/modePrompts.js';
 import {
 	anthropicEffectiveMaxTokens,
@@ -716,8 +717,9 @@ async function runOpenAILoop(
 				handlers.onDone(structured.serialize(), accUsage);
 				return;
 			}
-			synthesizeMissingOpenAIToolResults(conversation, turnToolCalls, e instanceof Error ? e.message : String(e));
-			handlers.onError(e instanceof Error ? e.message : String(e));
+			const errText = formatLlmSdkError(e);
+			synthesizeMissingOpenAIToolResults(conversation, turnToolCalls, errText);
+			handlers.onError(errText);
 			return;
 		}
 		timeoutMgr.stop();
@@ -1130,8 +1132,9 @@ async function runAnthropicLoop(
 				handlers.onDone(structured.serialize(), accUsage);
 				return;
 			}
-			synthesizeMissingAnthropicToolResults(conversation, turnToolUses, e instanceof Error ? e.message : String(e));
-			handlers.onError(e instanceof Error ? e.message : String(e));
+			const errTextA = formatLlmSdkError(e);
+			synthesizeMissingAnthropicToolResults(conversation, turnToolUses, errTextA);
+			handlers.onError(errTextA);
 			return;
 		}
 		timeoutMgrA.stop();

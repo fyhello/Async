@@ -28,6 +28,9 @@ export const messagesZhCN: Record<string, string> = {
 	'app.ipcError': 'IPC 异常',
 	'app.noWorkspace': '未打开工作区',
 	'app.noModelSelected': '请先选择模型：点击输入栏的模型按钮，或在设置 → 模型中添加并设为默认。',
+	'app.chatSendFailed': '无法开始本轮对话（主进程未启动流式通道）。请重试或查看开发者工具日志。',
+	'app.chatSendFailedNoWindow': '无法开始对话：窗口状态异常，请重试或重启应用。',
+	'app.chatSendFailedReason': '无法开始对话：{{reason}}',
 	'composer.attach.noWorkspace': '请先打开工作区文件夹，才能将图片或文件附加到输入框。',
 	'composer.attach.saveFailed': '无法保存附件到工作区。',
 	'composer.attach.tooLarge': '文件过大（单文件上限 8MB）。',
@@ -375,7 +378,7 @@ export const messagesZhCN: Record<string, string> = {
 	'settings.nav.general': '通用',
 	'settings.nav.appearance': '外观',
 	'settings.nav.plan': '统计与用量',
-	'settings.nav.agents': '智能体',
+	'settings.nav.agents': '执行与安全',
 	'settings.nav.tab': '标签页',
 	'settings.nav.models': '模型',
 	'settings.nav.cloud': '云端智能体',
@@ -409,7 +412,7 @@ export const messagesZhCN: Record<string, string> = {
 	'settings.title.autoUpdate': '自动更新',
 	'settings.title.general': '通用',
 	'settings.title.appearance': '外观',
-	'settings.title.agents': '智能体',
+	'settings.title.agents': '执行与安全',
 	'settings.appearance.lead': '使用浅色、深色界面，或跟随系统设置。切换时会有柔和过渡动画。',
 	'settings.appearance.light': '浅色',
 	'settings.appearance.dark': '深色',
@@ -719,6 +722,34 @@ export const messagesZhCN: Record<string, string> = {
 	'agentBehavior.libraryTitle': '智能体库',
 	'agentBehavior.libraryHint':
 		'规则、技能、子代理与自定义斜杠命令现统一放在「规则、技能与子代理」中，便于区分行为设置与可复用的提示资源。',
+	'agentBehavior.shellPermissionMode': 'Shell 命令权限',
+	'agentBehavior.shellPermissionModeDesc':
+		'与 Agent 输入栏旁三档下拉同步：总是执行、规则内放行、每次询问。',
+	'agentBehavior.shellComposerHint':
+		'与输入栏「执行命令权限」三档一致。规则内放行：权限规则命中允许或低风险白名单可免确认；每次询问：每条 Bash 都需确认（允许类规则也不跳过）。细粒度见下方「工具权限规则」。会话记忆抽取在「代码索引与记忆」页底部。',
+	'agentBehavior.toolRulesTitle': '工具权限规则',
+	'agentBehavior.toolRulesDesc':
+		'按工具名与可选匹配内容决定 allow / deny / ask；优先级：deny > ask > allow。未命中规则时仍使用本页上方的 shell / 写入确认开关。Bash 可用 glob（如 `git *`）或完整命令前缀；Write/Edit 可填相对路径 glob。',
+	'agentBehavior.toolRuleBehavior': '策略',
+	'agentBehavior.toolRuleAllow': '允许',
+	'agentBehavior.toolRuleDeny': '拒绝',
+	'agentBehavior.toolRuleAsk': '询问（沿用默认确认流）',
+	'agentBehavior.toolRuleToolName': '工具名',
+	'agentBehavior.toolRuleContent': '匹配内容（可选）',
+	'agentBehavior.toolRuleContentPh': '留空表示该工具全部调用；或 Bash 命令 / 文件 glob',
+	'agentBehavior.toolRuleAdd': '+ 添加规则',
+	'agentBehavior.toolRulesEmpty': '暂无工具权限规则。点击「添加规则」进行配置；deny 优先于 allow。',
+	'agentBehavior.toolRuleRemove': '删除规则',
+	'agentBehavior.avoidPromptsTitle': '无 UI 时拒绝「应询问」的规则',
+	'agentBehavior.avoidPromptsDesc':
+		'开启后，若某条规则为「询问」但当前无法弹窗（例如纯后台子 Agent），将直接拒绝该次调用。一般保持关闭即可。',
+	'agentBehavior.memoryExtractionTitle': '会话记忆抽取',
+	'agentBehavior.memoryExtractionDesc':
+		'控制向 `.async/memory` 写入前的后台抽取频率（对齐 Claude Code SessionMemory 思路）。关闭后不再排队抽取。',
+	'agentBehavior.memoryExtractionEnabled': '启用自动记忆抽取',
+	'agentBehavior.memFirst': '首次抽取最少消息条数',
+	'agentBehavior.memBetween': '两次抽取间新增消息条数',
+	'agentBehavior.memTools': '两次抽取间最少工具调用次数',
 
 	'agentSettings.scopeFilterAll': '全部',
 	'agentSettings.scopeFilterUser': '所有项目',
@@ -1076,6 +1107,9 @@ export const messagesZhCN: Record<string, string> = {
 	'common.edit': '编辑',
 	'common.loading': '加载中…',
 	'agent.commandPermission.aria': '执行命令权限',
-	'agent.commandPermission.ask': '每次询问',
 	'agent.commandPermission.always': '总是执行',
+	'agent.commandPermission.rules': '规则内放行',
+	'agent.commandPermission.askEvery': '每次询问',
+	'agent.commandPermission.settingsHint':
+		'与设置 →「执行与安全」中的 Shell 三档权限一致。细粒度允许/拒绝在同一页的「工具权限规则」中配置。',
 };

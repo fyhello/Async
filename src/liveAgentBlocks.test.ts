@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	applyLiveAgentChatPayload,
 	createEmptyLiveAgentBlocks,
+	extractTodosFromLiveBlocks,
 	liveBlocksToAssistantSegments,
 } from './liveAgentBlocks';
 import { defaultT } from './i18n';
@@ -9,6 +10,51 @@ import { defaultT } from './i18n';
 describe('liveAgentBlocks', () => {
 	afterEach(() => {
 		vi.useRealTimers();
+	});
+
+	it('extractTodosFromLiveBlocks ignores TodoWrite streaming_args partialJson', () => {
+		let st = createEmptyLiveAgentBlocks();
+		st = applyLiveAgentChatPayload(st, {
+			type: 'tool_input_delta',
+			name: 'TodoWrite',
+			partialJson: '{"todos":[{"content":"A","status":"completed"},{"content":"B","status":"completed"}]}',
+			index: 0,
+		});
+		expect(extractTodosFromLiveBlocks(st.blocks)).toBeNull();
+	});
+
+	it('extractTodosFromLiveBlocks uses args after tool_call for TodoWrite', () => {
+		let st = createEmptyLiveAgentBlocks();
+		st = applyLiveAgentChatPayload(st, {
+			type: 'tool_input_delta',
+			name: 'TodoWrite',
+			partialJson: '{"todos":[{"content":"A","status":"completed"}]}',
+			index: 0,
+		});
+		st = applyLiveAgentChatPayload(st, {
+			type: 'tool_call',
+			name: 'TodoWrite',
+			args: '{"todos":[{"content":"A","status":"pending"},{"content":"B","status":"in_progress"}]}',
+			toolCallId: 'call-tw-1',
+		});
+		const todos = extractTodosFromLiveBlocks(st.blocks);
+		expect(todos).not.toBeNull();
+		expect(todos!.map((x) => x.status)).toEqual(['pending', 'in_progress']);
+	});
+
+	it('liveBlocksToAssistantSegments shows pending activity for TodoWrite streaming_args, not plan_todo', () => {
+		let st = createEmptyLiveAgentBlocks();
+		st = applyLiveAgentChatPayload(st, {
+			type: 'tool_input_delta',
+			name: 'TodoWrite',
+			partialJson: '{"todos":[{"content":"X","status":"completed"}]}',
+			index: 0,
+		});
+		const segs = liveBlocksToAssistantSegments(st.blocks, defaultT);
+		expect(segs.some((s) => s.type === 'plan_todo')).toBe(false);
+		const act = segs.filter((s) => s.type === 'activity');
+		expect(act.length).toBeGreaterThanOrEqual(1);
+		expect(act[0] && act[0].type === 'activity' && act[0].status).toBe('pending');
 	});
 
 	it('folds deltas and tool_input_delta into blocks', () => {

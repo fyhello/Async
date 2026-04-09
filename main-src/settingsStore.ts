@@ -6,7 +6,16 @@ import type { McpServerConfig } from './mcp/mcpTypes.js';
 import { resolveAsyncDataDir } from './dataDir.js';
 import { normalizeThinkingLevel, type ThinkingLevel } from './llm/thinkingLevel.js';
 export type { ThinkingLevel } from './llm/thinkingLevel.js';
-export type { AgentCustomization, AgentRule, AgentSkill, AgentSubagent, AgentCommand } from './agentSettingsTypes.js';
+export type {
+	AgentCustomization,
+	AgentRule,
+	AgentSkill,
+	AgentSubagent,
+	AgentCommand,
+	AgentToolPermissionRule,
+	AgentMemoryExtractionSettings,
+	ToolPermissionBehavior,
+} from './agentSettingsTypes.js';
 export type { McpServerConfig } from './mcp/mcpTypes.js';
 
 /** 单条用户模型实际请求时使用的协议（与适配器一致） */
@@ -528,6 +537,10 @@ export function patchSettings(partial: Partial<ShellSettings>): ShellSettings {
 					skills: partial.agent.skills ?? cached.agent?.skills ?? [],
 					subagents: partial.agent.subagents ?? cached.agent?.subagents ?? [],
 					commands: partial.agent.commands ?? cached.agent?.commands ?? [],
+					shellPermissionMode:
+						partial.agent.shellPermissionMode !== undefined
+							? partial.agent.shellPermissionMode
+							: cached.agent?.shellPermissionMode,
 					confirmShellCommands: partial.agent.confirmShellCommands ?? cached.agent?.confirmShellCommands,
 					skipSafeShellCommandsConfirm:
 						partial.agent.skipSafeShellCommandsConfirm ?? cached.agent?.skipSafeShellCommandsConfirm,
@@ -541,6 +554,18 @@ export function patchSettings(partial: Partial<ShellSettings>): ShellSettings {
 						partial.agent.streamIdleWatchdogEnabled ?? cached.agent?.streamIdleWatchdogEnabled,
 					roundHardTimeoutMs: partial.agent.roundHardTimeoutMs ?? cached.agent?.roundHardTimeoutMs,
 					maxToolRounds: partial.agent.maxToolRounds ?? cached.agent?.maxToolRounds,
+					toolPermissionRules:
+						partial.agent.toolPermissionRules !== undefined
+							? partial.agent.toolPermissionRules
+							: (cached.agent?.toolPermissionRules ?? []),
+					shouldAvoidPermissionPrompts:
+						partial.agent.shouldAvoidPermissionPrompts !== undefined
+							? partial.agent.shouldAvoidPermissionPrompts
+							: cached.agent?.shouldAvoidPermissionPrompts,
+					memoryExtraction:
+						partial.agent.memoryExtraction !== undefined
+							? { ...(cached.agent?.memoryExtraction ?? {}), ...partial.agent.memoryExtraction }
+							: cached.agent?.memoryExtraction,
 				}
 			: cached.agent;
 

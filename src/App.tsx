@@ -666,6 +666,7 @@ function AppMainWorkspaceInner() {
 		clearInFlightIpcRouting,
 		streamThreadRef,
 		ipcInFlightChatThreadIdRef,
+		ipcStreamNonceRef,
 		offThreadStreamDraftsRef,
 		streamStartedAtRef,
 		firstTokenAtRef,
@@ -830,6 +831,7 @@ function AppMainWorkspaceInner() {
 		composerMode,
 		streamThreadRef,
 		ipcInFlightChatThreadIdRef,
+		ipcStreamNonceRef,
 		offThreadStreamDraftsRef,
 		streamingToolPreviewClearTimerRef,
 		setStreamingToolPreview,
@@ -1366,7 +1368,7 @@ function AppMainWorkspaceInner() {
 			setStreamingThinking('');
 			clearStreamingToolPreviewNow();
 			resetLiveAgentBlocks();
-			beginStream(targetThreadId);
+			const streamNonce = beginStream(targetThreadId);
 			setMessages((m) => [...m, { role: 'user', content: visible }]);
 
 			const r = (await shell.invoke('chat:send', {
@@ -1374,6 +1376,7 @@ function AppMainWorkspaceInner() {
 				text: '',
 				mode: 'agent',
 				modelId: defaultModel,
+				streamNonce,
 				skillCreator: { userNote: tailWire, scope },
 			})) as { ok?: boolean; error?: string };
 
@@ -1445,7 +1448,7 @@ function AppMainWorkspaceInner() {
 			setStreamingThinking('');
 			clearStreamingToolPreviewNow();
 			resetLiveAgentBlocks();
-			beginStream(targetThreadId);
+			const streamNonce = beginStream(targetThreadId);
 			setMessages((m) => [...m, { role: 'user', content: visible }]);
 
 			const r = (await shell.invoke('chat:send', {
@@ -1453,6 +1456,7 @@ function AppMainWorkspaceInner() {
 				text: '',
 				mode: 'agent',
 				modelId: defaultModel,
+				streamNonce,
 				ruleCreator: {
 					userNote: tailWire,
 					ruleScope,
@@ -1512,7 +1516,7 @@ function AppMainWorkspaceInner() {
 			setStreamingThinking('');
 			clearStreamingToolPreviewNow();
 			resetLiveAgentBlocks();
-			beginStream(targetThreadId);
+			const streamNonce = beginStream(targetThreadId);
 			setMessages((m) => [...m, { role: 'user', content: visible }]);
 
 			const r = (await shell.invoke('chat:send', {
@@ -1520,6 +1524,7 @@ function AppMainWorkspaceInner() {
 				text: '',
 				mode: 'agent',
 				modelId: defaultModel,
+				streamNonce,
 				subagentCreator: { userNote: tailWire, scope },
 			})) as { ok?: boolean; error?: string };
 
@@ -2739,12 +2744,16 @@ function AppMainWorkspaceInner() {
 				skills: agentCustomization.skills ?? [],
 				subagents: agentCustomization.subagents ?? [],
 				commands: agentCustomization.commands ?? [],
+				shellPermissionMode: agentCustomization.shellPermissionMode,
 				confirmShellCommands: agentCustomization.confirmShellCommands,
 				skipSafeShellCommandsConfirm: agentCustomization.skipSafeShellCommandsConfirm,
 				confirmWritesBeforeExecute: agentCustomization.confirmWritesBeforeExecute,
 				maxConsecutiveMistakes: agentCustomization.maxConsecutiveMistakes,
 				mistakeLimitEnabled: agentCustomization.mistakeLimitEnabled,
 				backgroundForkAgent: agentCustomization.backgroundForkAgent,
+				toolPermissionRules: agentCustomization.toolPermissionRules ?? [],
+				shouldAvoidPermissionPrompts: agentCustomization.shouldAvoidPermissionPrompts,
+				memoryExtraction: agentCustomization.memoryExtraction,
 			},
 			editor: editorSettings,
 			indexing: {

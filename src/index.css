@@ -5678,12 +5678,20 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	background: var(--ref-command-permission-bg-active);
 }
 
-.ref-command-permission-trigger--ask {
+.ref-command-permission-trigger--ask-every-time {
 	--ref-command-permission-tone: var(--void-git-added);
 	--ref-command-permission-border: color-mix(in srgb, var(--void-git-added) 26%, var(--void-border-soft));
 	--ref-command-permission-bg: color-mix(in srgb, var(--void-git-added) 12%, var(--void-bg-2));
 	--ref-command-permission-bg-hover: color-mix(in srgb, var(--void-git-added) 17%, var(--void-bg-3));
 	--ref-command-permission-bg-active: color-mix(in srgb, var(--void-git-added) 20%, var(--void-bg-2));
+}
+
+.ref-command-permission-trigger--rules {
+	--ref-command-permission-tone: var(--void-accent);
+	--ref-command-permission-border: color-mix(in srgb, var(--void-accent) 28%, var(--void-border-soft));
+	--ref-command-permission-bg: color-mix(in srgb, var(--void-accent) 10%, var(--void-bg-2));
+	--ref-command-permission-bg-hover: color-mix(in srgb, var(--void-accent) 15%, var(--void-bg-3));
+	--ref-command-permission-bg-active: color-mix(in srgb, var(--void-accent) 18%, var(--void-bg-2));
 }
 
 .ref-command-permission-trigger--always {
@@ -5803,9 +5811,14 @@ html[data-theme-switching='true'] .ref-editor-welcome-panel {
 	color: color-mix(in srgb, var(--ref-command-option-tone) 88%, var(--void-fg-0));
 }
 
-.ref-command-permission-option--ask {
+.ref-command-permission-option--ask-every-time {
 	--ref-command-option-tone: var(--void-git-added);
 	--ref-command-option-bg-selected: color-mix(in srgb, var(--void-git-added) 15%, transparent);
+}
+
+.ref-command-permission-option--rules {
+	--ref-command-option-tone: var(--void-accent);
+	--ref-command-option-bg-selected: color-mix(in srgb, var(--void-accent) 15%, transparent);
 }
 
 .ref-command-permission-option--always {
@@ -12154,6 +12167,56 @@ select.ref-settings-native-select:focus {
 
 .ref-settings-agent-remove:hover {
 	color: #f87171;
+}
+
+.ref-settings-tool-perm-rule-fields {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 12px;
+	align-items: flex-start;
+}
+
+/* 与 .ref-void-select-trigger（min-height 42px）同高，避免「策略 / 工具名」两列因 flex-end 底对齐而一高一低 */
+.ref-settings-tool-perm-rule-fields > .ref-settings-field {
+	margin-bottom: 0;
+}
+
+.ref-settings-tool-perm-rule-fields > .ref-settings-field input[type='text'] {
+	min-height: 42px;
+	box-sizing: border-box;
+}
+
+.ref-settings-tool-perm-rule-footer {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 12px;
+	padding-top: 10px;
+	border-top: 1px solid var(--void-border-soft);
+}
+
+.ref-settings-tool-perm-rule-delete {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px;
+	font-size: 12px;
+	border-radius: 8px;
+	border: 1px solid var(--void-border-soft);
+	background: var(--void-bg-1);
+	color: var(--void-fg-2);
+	cursor: pointer;
+	font-family: inherit;
+}
+
+.ref-settings-tool-perm-rule-delete:hover {
+	color: #f87171;
+	border-color: color-mix(in srgb, #f87171 35%, var(--void-border-soft));
+	background: color-mix(in srgb, #f87171 6%, var(--void-bg-1));
+}
+
+.ref-settings-tool-perm-rule-delete-ico {
+	flex-shrink: 0;
+	opacity: 0.9;
 }
 
 .ref-settings-agent-empty {

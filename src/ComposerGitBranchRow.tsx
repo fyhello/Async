@@ -1,6 +1,7 @@
 import { forwardRef, useCallback } from 'react';
 import { AgentCommandPermissionDropdown, type CommandPermissionMode } from './AgentCommandPermissionDropdown';
 import type { AgentCustomization } from './agentSettingsTypes';
+import { getShellPermissionMode, shellPermissionModeToAgentPatch } from './shellPermissionMode';
 import {
 	useAppShellChrome,
 	useAppShellGitActions,
@@ -13,10 +14,6 @@ import {
 	type GitUnavailableReason,
 } from './gitAvailability';
 import { IconChevron, IconGitSCM } from './icons';
-
-function shellCommandPermissionMode(agent: AgentCustomization | undefined): CommandPermissionMode {
-	return agent?.confirmShellCommands === false ? 'always' : 'ask';
-}
 
 export type ComposerGitBranchRowProps = {
 	/** 打开分支菜单前关闭 + / 模型浮层（与原先 App 内联行为一致） */
@@ -37,17 +34,11 @@ export const ComposerGitBranchRow = forwardRef<HTMLButtonElement, ComposerGitBra
 		const gitUnavailableReason: GitUnavailableReason = gitStatusOk
 			? 'none'
 			: classifyGitUnavailableReason(gitLines[0]);
-		const commandPermissionMode = shellCommandPermissionMode(agentCustomization);
+		const commandPermissionMode: CommandPermissionMode = getShellPermissionMode(agentCustomization);
 
 		const onChangeCommandPermissionMode = useCallback(
 			async (mode: CommandPermissionMode) => {
-				const patch: Partial<AgentCustomization> =
-					mode === 'always'
-						? { confirmShellCommands: false }
-						: {
-								confirmShellCommands: true,
-								skipSafeShellCommandsConfirm: false,
-							};
+				const patch = shellPermissionModeToAgentPatch(mode);
 				setAgentCustomization((prev) => ({ ...prev, ...patch }));
 				if (!shell) {
 					return;
@@ -59,14 +50,17 @@ export const ComposerGitBranchRow = forwardRef<HTMLButtonElement, ComposerGitBra
 
 		return (
 			<div className="ref-composer-git-branch-row">
-				<AgentCommandPermissionDropdown
-					value={commandPermissionMode}
-					onChange={(mode) => void onChangeCommandPermissionMode(mode)}
-					askLabel={t('agent.commandPermission.ask')}
-					alwaysLabel={t('agent.commandPermission.always')}
-					ariaLabel={t('agent.commandPermission.aria')}
-					disabled={!shell}
-				/>
+				<span title={t('agent.commandPermission.settingsHint')}>
+					<AgentCommandPermissionDropdown
+						value={commandPermissionMode}
+						onChange={(mode) => void onChangeCommandPermissionMode(mode)}
+						alwaysLabel={t('agent.commandPermission.always')}
+						rulesLabel={t('agent.commandPermission.rules')}
+						askEveryTimeLabel={t('agent.commandPermission.askEvery')}
+						ariaLabel={t('agent.commandPermission.aria')}
+						disabled={!shell}
+					/>
+				</span>
 				<button
 					ref={ref}
 					type="button"

@@ -73,6 +73,7 @@ import {
 	savePlan,
 	getExecutedPlanFileKeys,
 	markPlanFileExecuted,
+	incrementThreadAgentToolCallCount,
 	type ChatMessage,
 } from '../threadStore.js';
 import { compressForSend } from '../agent/conversationCompress.js';
@@ -82,6 +83,7 @@ import { parseComposerMode, type ComposerMode } from '../llm/composerMode.js';
 import { resolveModelRequest, resolveThinkingLevelForSelection } from '../llm/modelResolve.js';
 import { preconnectLlmBaseUrlIfEligible } from '../llm/apiPreconnect.js';
 import { streamChatUnified } from '../llm/llmRouter.js';
+import { formatLlmSdkError } from '../llm/formatLlmSdkError.js';
 import {
 	buildWorkspaceTreeSummary,
 	cloneMessagesWithExpandedLastUser,
@@ -335,15 +337,37 @@ function recordTurnTokenUsageStats(
 	});
 }
 
+function persistAssistantStreamError(threadId: string, message: string): void {
+	try {
+		const lang = getSettings().language;
+		const prefix = lang === 'en' ? 'Error: ' : '错误：';
+		appendMessage(threadId, { role: 'assistant', content: `${prefix}${message}` });
+	} catch (e) {
+		console.warn('[chat:stream] persist assistant error failed:', e instanceof Error ? e.message : e);
+	}
+}
+
 function runChatStream(
 	win: BrowserWindow,
 	threadId: string,
 	messages: ChatMessage[],
 	mode: ReturnType<typeof parseComposerMode>,
 	modelSelection: string,
-	agentSystemAppend?: string
+	agentSystemAppend?: string,
+	streamNonce?: number
 ): void {
-	const send = (obj: unknown) => win.webContents.send('async-shell:chat', obj);
+	const send = (obj: unknown) => {
+		const o = (typeof obj === 'object' && obj !== null ? obj : {}) as Record<string, unknown>;
+		win.webContents.send(
+			'async-shell:chat',
+			streamNonce !== undefined ? { ...o, streamNonce } : o
+		);
+	};
+	const emitStreamError = (message: string) => {
+		console.error('[chat:stream]', threadId, message);
+		persistAssistantStreamError(threadId, message);
+		send({ threadId, type: 'error', message });
+	};
 	const prev = abortByThread.get(threadId);
 	prev?.abort();
 	agentRevertSnapshotsByThread.set(threadId, new Map());
@@ -358,7 +382,7 @@ function runChatStream(
 			const thinkingLevel = resolveThinkingLevelForSelection(settings, modelSelection);
 			const resolved = resolveModelRequest(settings, modelSelection);
 			if (!resolved.ok) {
-				send({ threadId, type: 'error', message: resolved.message });
+				emitStreamError(resolved.message);
 				return;
 			}
 
@@ -511,8 +535,10 @@ function runChatStream(
 						onThinkingDelta: (text) => send({ threadId, type: 'thinking_delta', text }),
 						onToolCall: (name, args, toolCallId) =>
 							send({ threadId, type: 'tool_call', name, args: JSON.stringify(args), toolCallId }),
-						onToolResult: (name, result, success, toolCallId) =>
-							send({ threadId, type: 'tool_result', name, result, success, toolCallId }),
+						onToolResult: (name, result, success, toolCallId) => {
+							incrementThreadAgentToolCallCount(threadId);
+							send({ threadId, type: 'tool_result', name, result, success, toolCallId });
+						},
 						onDone: (full, usage) => {
 							updateLastAssistant(threadId, full);
 							accumulateTokenUsage(threadId, usage?.inputTokens, usage?.outputTokens);
@@ -525,7 +551,7 @@ function runChatStream(
 							});
 							send({ threadId, type: 'done', text: full, usage });
 						},
-						onError: (message) => send({ threadId, type: 'error', message }),
+						onError: (message) => emitStreamError(message),
 					}
 				);
 			} finally {
@@ -585,12 +611,12 @@ function runChatStream(
 					}
 					send({ threadId, type: 'done', text: full, usage });
 				},
-				onError: (message) => send({ threadId, type: 'error', message }),
+				onError: (message) => emitStreamError(message),
 			}
 		);
 		} catch (e) {
 			try {
-				send({ threadId, type: 'error', message: e instanceof Error ? e.message : String(e) });
+				emitStreamError(formatLlmSdkError(e));
 			} catch { /* window may be destroyed */ }
 		} finally {
 			abortByThread.delete(threadId);
@@ -1493,6 +1519,7 @@ export function registerIpc(): void {
 				text: string;
 				mode?: string;
 				modelId?: string;
+				streamNonce?: number;
 				skillCreator?: { userNote: string; scope: SkillCreatorScope };
 				ruleCreator?: { userNote: string; ruleScope: AgentRuleScope; globPattern?: string };
 				subagentCreator?: { userNote: string; scope: SubagentCreatorScope };
@@ -1501,12 +1528,13 @@ export function registerIpc(): void {
 			}
 		) => {
 			const { threadId, text } = payload;
+			const streamNonce = typeof payload.streamNonce === 'number' ? payload.streamNonce : undefined;
 			const mode = parseComposerMode(payload.mode);
 			const rawMid = payload.modelId;
 			const modelSelection = typeof rawMid === 'string' ? rawMid.trim() : '';
 			const win = BrowserWindow.fromWebContents(event.sender);
 			if (!win) {
-				return { ok: false as const };
+				return { ok: false as const, error: 'no-window' as const };
 			}
 			if (!modelSelection || modelSelection.toLowerCase() === 'auto') {
 				return { ok: false as const, error: 'no-model' as const };
@@ -1562,7 +1590,7 @@ export function registerIpc(): void {
 				});
 				finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute, root);
 				const t = appendMessage(threadId, { role: 'user', content: visible });
-				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend);
+				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend, streamNonce);
 				return { ok: true as const };
 			}
 
@@ -1605,7 +1633,7 @@ export function registerIpc(): void {
 					Boolean(root)
 				);
 				const t = appendMessage(threadId, { role: 'user', content: visible });
-				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend);
+				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend, streamNonce);
 				return { ok: true as const };
 			}
 
@@ -1645,7 +1673,7 @@ export function registerIpc(): void {
 				});
 				finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute, root);
 				const t = appendMessage(threadId, { role: 'user', content: visible });
-				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend);
+				runChatStream(win, threadId, t.messages, creatorAgentMode, modelSelection, finalSystemAppend, streamNonce);
 				return { ok: true as const };
 			}
 
@@ -1681,7 +1709,7 @@ export function registerIpc(): void {
 			finalSystemAppend = appendPlanExecuteToSystem(finalSystemAppend, payload.planExecute, root);
 
 			const t = appendMessage(threadId, { role: 'user', content: userText });
-			runChatStream(win, threadId, t.messages, mode, modelSelection, finalSystemAppend);
+			runChatStream(win, threadId, t.messages, mode, modelSelection, finalSystemAppend, streamNonce);
 
 			return { ok: true as const };
 		}
@@ -1691,9 +1719,17 @@ export function registerIpc(): void {
 		'chat:editResend',
 		async (
 			event,
-			payload: { threadId: string; visibleIndex: number; text: string; mode?: string; modelId?: string }
+			payload: {
+				threadId: string;
+				visibleIndex: number;
+				text: string;
+				mode?: string;
+				modelId?: string;
+				streamNonce?: number;
+			}
 		) => {
 			const { threadId, visibleIndex, text } = payload;
+			const streamNonce = typeof payload.streamNonce === 'number' ? payload.streamNonce : undefined;
 			const mode = parseComposerMode(payload.mode);
 			const rawMid = payload.modelId;
 			const modelSelection = typeof rawMid === 'string' ? rawMid.trim() : '';
@@ -1749,7 +1785,7 @@ export function registerIpc(): void {
 				});
 
 				const t = replaceFromUserVisibleIndex(threadId, visibleIndex, userText);
-				runChatStream(win, threadId, t.messages, mode, modelSelection, finalSystemAppend);
+				runChatStream(win, threadId, t.messages, mode, modelSelection, finalSystemAppend, streamNonce);
 				return { ok: true as const };
 			} catch {
 				return { ok: false as const, error: 'replace-failed' as const };
